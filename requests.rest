@@ -1,0 +1,34 @@
+POST http://127.0.0.1:8080/login
+Content-Type: application/json
+
+{
+    "username": "admin",
+    "password": "admin"
+}
+
+###
+POST http://127.0.0.1:8080/login
+Content-Type: application/json
+
+{
+    "username": "user1",
+    "password": "pass1"
+}
+
+###
+GET http://127.0.0.1:8080/protected HTTP/1.1
+Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTc1NDg3NjA5MH0.VO83nj0GU43rR0dt_Q0lOUQIejarfdy4C6RNm5v2PWs
+
+###
+
+GET http://127.0.0.1:8080/protected HTTP/1.1
+Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMSIsImV4cCI6MTc1NDg3NjU0NH0.Rc8wVTlhHvPH_kn7NyBLKp4DVAKg9bYRtg3V4GZTRtg
+
+###
+GET http://127.0.0.1:8080/user HTTP/1.1
+Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTc1NDg3NjA5MH0.VO83nj0GU43rR0dt_Q0lOUQIejarfdy4C6RNm5v2PWs
+
+###
+
+GET http://127.0.0.1:8080/user HTTP/1.1
+Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMSIsImV4cCI6MTc1NDg3NjU0NH0.Rc8wVTlhHvPH_kn7NyBLKp4DVAKg9bYRtg3V4GZTRtg
