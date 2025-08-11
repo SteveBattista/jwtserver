@@ -6,7 +6,7 @@ use jsonwebtoken::{encode, decode, Header, Validation, EncodingKey, DecodingKey,
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use argon2::{Argon2, PasswordHash, PasswordVerifier};
+use argon2::{PasswordHash, PasswordVerifier};
 use anyhow::Result;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -45,8 +45,12 @@ async fn login(auth: web::Json<AuthData>) -> impl Responder {
     if let Some(stored_hash) = users.get(&auth.username) {
         let parsed_hash = PasswordHash::new(stored_hash);
         if let Ok(parsed_hash) = parsed_hash {
-            let argon2 = Argon2::default();
-            if argon2.verify_password(auth.password.as_bytes(), &parsed_hash).is_ok() {
+            let argon2id = argon2::Argon2::new(
+                argon2::Algorithm::Argon2id,
+                argon2::Version::default(),
+                argon2::Params::default(),
+            );
+            if argon2id.verify_password(auth.password.as_bytes(), &parsed_hash).is_ok() {
                 let expiration = chrono::Utc::now()
                     .checked_add_signed(chrono::Duration::minutes(60))
                     .expect("valid timestamp")

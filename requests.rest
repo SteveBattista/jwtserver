@@ -17,7 +17,7 @@ Content-Type: application/json
 
 ###
 GET http://127.0.0.1:8080/protected HTTP/1.1
-Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTc1NDg3NjA5MH0.VO83nj0GU43rR0dt_Q0lOUQIejarfdy4C6RNm5v2PWs
+Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTc1NDkxMzc3Nn0.a2Wc1ztXCvSGl7K6ySBDclE4lvRqRZzqinTdSBvlrvk
 
 ###
 
