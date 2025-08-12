@@ -219,7 +219,7 @@ async fn user(req: actix_web::HttpRequest, secret: web::Data<Vec<u8>>) -> Result
 /// 
 /// # Server Configuration
 /// - Loads JWT secret from "secret.key" file
-/// - Binds to 127.0.0.1:4000
+/// - Binds to 0.0.0.1:4000
 /// - Serves static files from "./static" directory
 /// - Configures API routes: /login, /user, /protected
 /// - Sets up request logging middleware
@@ -231,12 +231,12 @@ async fn user(req: actix_web::HttpRequest, secret: web::Data<Vec<u8>>) -> Result
 /// - `/protected` - GET endpoint for admin users only
 /// 
 /// # Examples
-/// Server starts at: http://127.0.0.1:4000
+/// Server starts at: http://0.0.0.1:4000
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init();
     let secret = load_secret("secret.key").expect("Failed to load secret key");
-    println!("Starting server at http://127.0.0.1:4000");
+    println!("Starting server at http://0.0.0.1:4000");
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(secret.clone()))
@@ -248,7 +248,7 @@ async fn main() -> std::io::Result<()> {
             // Static file serving
             .service(fs::Files::new("/", "./static").index_file("login.html"))
     })
-    .bind(("127.0.0.1", 4000))?
+    .bind(("0.0.0.0", 4000))?
     .run()
     .await
 }

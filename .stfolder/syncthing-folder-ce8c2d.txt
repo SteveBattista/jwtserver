@@ -1,0 +1,5 @@
+# This directory is a Syncthing folder marker.
+# Do not delete.
+
+folderID: jnotb-gzpm9
+created: 2025-08-12T15:24:19Z
