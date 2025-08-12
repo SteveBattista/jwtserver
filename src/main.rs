@@ -1,5 +1,6 @@
 use actix_web::middleware::Logger;
 use actix_web::{App, Error, HttpResponse, HttpServer, Responder, web};
+use actix_files as fs;
 use anyhow::Result;
 use argon2::{PasswordHash, PasswordVerifier};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
@@ -133,9 +134,12 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(web::Data::new(secret.clone()))
             .wrap(Logger::default())
+            // API routes
             .route("/login", web::post().to(login))
             .route("/protected", web::get().to(protected))
             .route("/user", web::get().to(user))
+            // Static file serving
+            .service(fs::Files::new("/", "./static").index_file("login.html"))
     })
     .bind(("127.0.0.1", 4000))?
     .run()

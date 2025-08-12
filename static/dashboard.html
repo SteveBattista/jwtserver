@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JWT Auth Demo - Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .dashboard-container {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .user-info {
+            background-color: #e9ecef;
+            padding: 20px;
+            border-radius: 4px;
+            margin-bottom: 30px;
+        }
+        .actions {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #0056b3;
+        }
+        .btn-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+        .btn-danger:hover {
+            background-color: #c82333;
+        }
+        .btn-warning {
+            background-color: #ffc107;
+            color: #212529;
+        }
+        .btn-warning:hover {
+            background-color: #e0a800;
+        }
+        .response-area {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 20px;
+            margin-top: 20px;
+            min-height: 100px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .error {
+            color: #dc3545;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .loading {
+            color: #6c757d;
+            font-style: italic;
+        }
+        .jwt-info {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 12px;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <h1>JWT Authentication Dashboard</h1>
+        
+        <div id="error-message" class="error" style="display: none;"></div>
+        
+        <div class="user-info">
+            <h3>Welcome, <span id="username">Loading...</span>!</h3>
+            <p>You are successfully authenticated with a JWT token.</p>
+        </div>
+
+        <div class="jwt-info">
+            <strong>Your JWT Token:</strong><br>
+            <span id="jwt-display"></span>
+        </div>
+
+        <div class="actions">
+            <button class="btn-primary" onclick="testUserEndpoint()">Test /user Endpoint</button>
+            <button class="btn-warning" onclick="testProtectedEndpoint()">Test /protected Endpoint (Admin Only)</button>
+            <button class="btn-danger" onclick="logout()">Logout</button>
+        </div>
+
+        <div class="response-area" id="response-area">Click a button above to test API endpoints...</div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://127.0.0.1:4000';
+        let currentToken = null;
+        let currentUser = null;
+
+        // Check if user is logged in
+        function checkAuth() {
+            const token = localStorage.getItem('jwt_token');
+            if (!token) {
+                window.location.href = '/login.html';
+                return false;
+            }
+            
+            currentToken = token;
+            document.getElementById('jwt-display').textContent = token;
+            
+            // Decode JWT to get username (basic parsing, not validation)
+            try {
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                currentUser = payload.sub;
+                document.getElementById('username').textContent = currentUser;
+            } catch (e) {
+                console.error('Error parsing JWT:', e);
+                document.getElementById('username').textContent = 'Unknown';
+            }
+            
+            return true;
+        }
+
+        // Test the /user endpoint
+        async function testUserEndpoint() {
+            setLoading('Testing /user endpoint...');
+            
+            try {
+                const response = await fetch(`${API_BASE}/user`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                
+                const responseText = await response.text();
+                let result = `Status: ${response.status} ${response.statusText}\n\n`;
+                
+                if (response.ok) {
+                    try {
+                        const data = JSON.parse(responseText);
+                        result += `Response: ${JSON.stringify(data, null, 2)}`;
+                    } catch {
+                        result += `Response: ${responseText}`;
+                    }
+                } else {
+                    result += `Error: ${responseText}`;
+                }
+                
+                setResponse(result);
+                
+            } catch (error) {
+                setResponse(`Network Error: ${error.message}`);
+            }
+        }
+
+        // Test the /protected endpoint
+        async function testProtectedEndpoint() {
+            setLoading('Testing /protected endpoint...');
+            
+            try {
+                const response = await fetch(`${API_BASE}/protected`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                
+                const responseText = await response.text();
+                let result = `Status: ${response.status} ${response.statusText}\n\n`;
+                
+                if (response.ok) {
+                    try {
+                        const data = JSON.parse(responseText);
+                        result += `Response: ${JSON.stringify(data, null, 2)}`;
+                    } catch {
+                        result += `Response: ${responseText}`;
+                    }
+                } else {
+                    result += `Error: ${responseText}`;
+                    if (response.status === 403) {
+                        result += '\n\nNote: This endpoint requires admin privileges. Try logging in as "admin" to access it.';
+                    }
+                }
+                
+                setResponse(result);
+                
+            } catch (error) {
+                setResponse(`Network Error: ${error.message}`);
+            }
+        }
+
+        // Logout function
+        function logout() {
+            localStorage.removeItem('jwt_token');
+            window.location.href = '/login.html';
+        }
+
+        // Helper functions
+        function setLoading(message) {
+            const responseArea = document.getElementById('response-area');
+            responseArea.textContent = message;
+            responseArea.className = 'response-area loading';
+        }
+
+        function setResponse(message) {
+            const responseArea = document.getElementById('response-area');
+            responseArea.textContent = message;
+            responseArea.className = 'response-area';
+        }
+
+        // Initialize page
+        if (checkAuth()) {
+            console.log('User authenticated:', currentUser);
+        }
+    </script>
+</body>
+</html>
