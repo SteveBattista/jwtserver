@@ -19,44 +19,44 @@ A minimal JWT authentication server built with Rust and Actix-web.
 
 1. Create a strong secret key file (example commands):
 
-```bash
-# Option A: 64 random bytes, base64-encoded
-openssl rand -base64 64 > secret.key
+    ```bash
+    # Option A: 64 random bytes, base64-encoded
+    openssl rand -base64 64 > secret.key
 
-# Option B: 64 random bytes hashed with SHA-512 (hex)
-python3 - << 'PY'
-import os, hashlib
-print(hashlib.sha512(os.urandom(64)).hexdigest())
-PY
-# Copy the printed value into secret.key
-```
+    # Option B: 64 random bytes hashed with SHA-512 (hex)
+    python3 - << 'PY'
+    import os, hashlib
+    print(hashlib.sha512(os.urandom(64)).hexdigest())
+    PY
+    # Copy the printed value into secret.key
+    ```
 
 2. Create users with Argon2id password hashes in `users.txt`.
 
-Format is one user per line:
+    Format is one user per line:
 
-```text
-username:argon2id-encoded-hash
-```
+    ```text
+    username:argon2id-encoded-hash
+    ```
 
-Example (generate hashes with Python argon2-cffi):
+    Example (generate hashes with Python argon2-cffi):
 
-```bash
-python3 -m pip install --user argon2-cffi
-python3 - << 'PY'
-from argon2 import PasswordHasher
-ph = PasswordHasher()  # defaults to Argon2id
-for u,p in [('admin','admin'), ('user1','password1'), ('user2','password2')]:
-    print(f"{u}:{ph.hash(p)}")
-PY
-# Paste the three lines into users.txt
-```
+    ```bash
+    python3 -m pip install --user argon2-cffi
+    python3 - << 'PY'
+    from argon2 import PasswordHasher
+    ph = PasswordHasher()  # defaults to Argon2id
+    for u,p in [('admin','admin'), ('user1','password1'), ('user2','password2')]:
+        print(f"{u}:{ph.hash(p)}")
+    PY
+    # Paste the three lines into users.txt
+    ```
 
 3. Build and run:
 
-```bash
-cargo run
-```
+    ```bash
+    cargo run
+    ```
 
 Server starts at:
 

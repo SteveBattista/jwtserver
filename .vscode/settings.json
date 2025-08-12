@@ -1,10 +1,13 @@
 {
     "cSpell.words": [
         "actix",
+        "cffi",
         "chrono",
         "dotenv",
+        "Eywgis",
         "hashlib",
         "hexdigest",
+        "HMAC",
         "jsonwebtoken",
         "jwtserver",
         "serde",
