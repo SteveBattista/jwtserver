@@ -20,7 +20,15 @@ struct AuthData {
     password: String,
 }
 
-const SECRET: &[u8] = b"secret_key_change_me";
+
+fn load_secret(path: &str) -> Result<Vec<u8>> {
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    let mut secret = String::new();
+    use std::io::Read;
+    reader.read_to_string(&mut secret)?;
+    Ok(secret.trim().as_bytes().to_vec())
+}
 
 fn load_user_hashes(path: &str) -> Result<HashMap<String, String>> {
     let file = File::open(path)?;
@@ -35,7 +43,7 @@ fn load_user_hashes(path: &str) -> Result<HashMap<String, String>> {
     Ok(users)
 }
 
-async fn login(auth: web::Json<AuthData>) -> impl Responder {
+async fn login(auth: web::Json<AuthData>, secret: web::Data<Vec<u8>>) -> impl Responder {
     let Ok(users) = load_user_hashes("users.txt") else {
         return HttpResponse::InternalServerError().body("Failed to load user db");
     };
@@ -66,12 +74,12 @@ async fn login(auth: web::Json<AuthData>) -> impl Responder {
                     sub: auth.username.clone(),
                     exp: expiration.unwrap(),
                 };
+                let header = Header::new(Algorithm::HS512);
                 let token = encode(
-                    &Header::default(),
+                    &header,
                     &claims,
-                    &EncodingKey::from_secret(SECRET),
-                )
-                .unwrap();
+                    &EncodingKey::from_secret(&secret),
+                ).unwrap();
                 return HttpResponse::Ok().json(serde_json::json!({"token": token}));
             }
         }
@@ -79,15 +87,15 @@ async fn login(auth: web::Json<AuthData>) -> impl Responder {
     HttpResponse::Unauthorized().body("Invalid credentials")
 }
 
-async fn protected(req: actix_web::HttpRequest) -> Result<HttpResponse, Error> {
+async fn protected(req: actix_web::HttpRequest, secret: web::Data<Vec<u8>>) -> Result<HttpResponse, Error> {
     let auth_header = req.headers().get("Authorization");
     if let Some(header_value) = auth_header
         && let Ok(auth_str) = header_value.to_str()
         && let Some(token) = auth_str.strip_prefix("Bearer ")
     {
-        let validation = Validation::new(Algorithm::HS256);
+        let validation = Validation::new(Algorithm::HS512);
         if let Ok(token_data) =
-            decode::<Claims>(token, &DecodingKey::from_secret(SECRET), &validation)
+            decode::<Claims>(token, &DecodingKey::from_secret(&secret), &validation)
         {
             if token_data.claims.sub == "admin" {
                 return Ok(HttpResponse::Ok().json(serde_json::json!({"message": "Access granted (admin only)", "user": token_data.claims.sub})));
@@ -98,15 +106,15 @@ async fn protected(req: actix_web::HttpRequest) -> Result<HttpResponse, Error> {
     Ok(HttpResponse::Unauthorized().body("Invalid or missing token"))
 }
 
-async fn user(req: actix_web::HttpRequest) -> Result<HttpResponse, Error> {
+async fn user(req: actix_web::HttpRequest, secret: web::Data<Vec<u8>>) -> Result<HttpResponse, Error> {
     let auth_header = req.headers().get("Authorization");
     if let Some(header_value) = auth_header
         && let Ok(auth_str) = header_value.to_str()
         && let Some(token) = auth_str.strip_prefix("Bearer ")
     {
-        let validation = Validation::new(Algorithm::HS256);
+        let validation = Validation::new(Algorithm::HS512);
         if let Ok(token_data) =
-            decode::<Claims>(token, &DecodingKey::from_secret(SECRET), &validation)
+            decode::<Claims>(token, &DecodingKey::from_secret(&secret), &validation)
         {
             return Ok(HttpResponse::Ok().json(
                 serde_json::json!({"message": "Access granted", "user": token_data.claims.sub}),
@@ -119,9 +127,11 @@ async fn user(req: actix_web::HttpRequest) -> Result<HttpResponse, Error> {
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init();
+    let secret = load_secret("secret.key").expect("Failed to load secret key");
     println!("Starting server at http://127.0.0.1:4000");
-    HttpServer::new(|| {
+    HttpServer::new(move || {
         App::new()
+            .app_data(web::Data::new(secret.clone()))
             .wrap(Logger::default())
             .route("/login", web::post().to(login))
             .route("/protected", web::get().to(protected))

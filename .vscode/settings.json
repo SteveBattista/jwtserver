@@ -3,8 +3,12 @@
         "actix",
         "chrono",
         "dotenv",
+        "hashlib",
+        "hexdigest",
         "jsonwebtoken",
         "jwtserver",
-        "serde"
+        "serde",
+        "urandom",
+        "venv"
     ]
 }

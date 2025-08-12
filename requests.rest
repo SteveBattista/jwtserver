@@ -17,18 +17,18 @@ Content-Type: application/json
 
 ###
 GET http://127.0.0.1:4000/protected HTTP/1.1
-Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTc1NDkxMzc3Nn0.a2Wc1ztXCvSGl7K6ySBDclE4lvRqRZzqinTdSBvlrvk
+Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTc1NTAwODk2NH0.g8lu-_WR8xaKcXmExLjzdbJvl1AFvq57qxwztx7DEPfz4_xSm-wEHtNfgOj5Y0fxkXKwGNMB1dMt2BmkxXvKPQ
 
 ###
 
 GET http://127.0.0.1:4000/protected HTTP/1.1
-Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMSIsImV4cCI6MTc1NDkxNTU2Nn0.Ke3VYUDXKOFu38_ZWLvumI8suAHIJYUACvMEgiaKHos
+Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ1c2VyMSIsImV4cCI6MTc1NTAwODk5MH0.53nnQK9rvfK3EfERqeTIqfJdCilr1R6tTi2zPqOUUJHxjheqbtQBIfhNWmY0inaLcxl9QBsDBh3LjR-EywgisQ
 
 ###
 GET http://127.0.0.1:4000/user HTTP/1.1
-Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTc1NDg3NjA5MH0.VO83nj0GU43rR0dt_Q0lOUQIejarfdy4C6RNm5v2PWs
+Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTc1NTAwODk2NH0.g8lu-_WR8xaKcXmExLjzdbJvl1AFvq57qxwztx7DEPfz4_xSm-wEHtNfgOj5Y0fxkXKwGNMB1dMt2BmkxXvKPQ
 
 ###
 
 GET http://127.0.0.1:4000/user HTTP/1.1
-Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMSIsImV4cCI6MTc1NDkxNTU2Nn0.Ke3VYUDXKOFu38_ZWLvumI8suAHIJYUACvMEgiaKHos
+Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ1c2VyMSIsImV4cCI6MTc1NTAwODk5MH0.53nnQK9rvfK3EfERqeTIqfJdCilr1R6tTi2zPqOUUJHxjheqbtQBIfhNWmY0inaLcxl9QBsDBh3LjR-EywgisQ
