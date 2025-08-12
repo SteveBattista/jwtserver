@@ -119,7 +119,7 @@ async fn user(req: actix_web::HttpRequest) -> Result<HttpResponse, Error> {
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init();
-    println!("Starting server at http://127.0.0.1:8080");
+    println!("Starting server at http://127.0.0.1:4000");
     HttpServer::new(|| {
         App::new()
             .wrap(Logger::default())
@@ -127,7 +127,7 @@ async fn main() -> std::io::Result<()> {
             .route("/protected", web::get().to(protected))
             .route("/user", web::get().to(user))
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind(("127.0.0.1", 4000))?
     .run()
     .await
 }
