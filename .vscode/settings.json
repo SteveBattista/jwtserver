@@ -10,9 +10,18 @@
         "HMAC",
         "jsonwebtoken",
         "jwtserver",
+        "Luae",
+        "newpass",
         "nottoken",
+        "rngs",
+        "secretpass",
         "serde",
+        "supersecretpassword",
+        "TDPE",
+        "testpass",
+        "testuser",
         "urandom",
-        "venv"
+        "venv",
+        "Zsbd"
     ]
 }
