@@ -13,5 +13,5 @@ dotenv = "0.15"
 env_logger = "0.11"
 chrono = { version = "0.4", features = ["serde"] }
 argon2 = "0.5"
-anyhow = "1.0"
+anyhow = "1.0.99"
 actix-files = "0.6"
