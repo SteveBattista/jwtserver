@@ -65,7 +65,7 @@ fn load_users(file_path: &str) -> Result<HashMap<String, String>> {
     }
 
     let file = File::open(file_path)
-        .with_context(|| format!("Failed to open users file: {}", file_path))?;
+        .with_context(|| format!("Failed to open users file: {file_path}"))?;
     
     let reader = BufReader::new(file);
     let mut users = HashMap::new();
@@ -101,7 +101,7 @@ fn save_users(file_path: &str, users: &HashMap<String, String>) -> Result<()> {
         .create(true)
         .truncate(true)
         .open(file_path)
-        .with_context(|| format!("Failed to create/open users file: {}", file_path))?;
+        .with_context(|| format!("Failed to create/open users file: {file_path}"))?;
 
     // Write header comment
     writeln!(file, "# JWT Server Users File")?;
@@ -114,7 +114,7 @@ fn save_users(file_path: &str, users: &HashMap<String, String>) -> Result<()> {
     sorted_users.sort_by_key(|(username, _)| *username);
 
     for (username, hash) in sorted_users {
-        writeln!(file, "{}:{}", username, hash)?;
+        writeln!(file, "{username}:{hash}")?;
     }
 
     Ok(())
@@ -175,7 +175,7 @@ fn add_user(file_path: &str, username: &str, password: &str) -> Result<()> {
     users.insert(username.to_string(), hash);
     
     save_users(file_path, &users)?;
-    println!("✅ Added user '{}'", username);
+    println!("✅ Added user '{username}'");
     
     Ok(())
 }
@@ -196,7 +196,7 @@ fn remove_user(file_path: &str, username: &str) -> Result<()> {
     }
     
     save_users(file_path, &users)?;
-    println!("✅ Removed user '{}'", username);
+    println!("✅ Removed user '{username}'");
     
     Ok(())
 }
@@ -221,7 +221,7 @@ fn update_user(file_path: &str, username: &str, password: &str) -> Result<()> {
     users.insert(username.to_string(), hash);
     
     save_users(file_path, &users)?;
-    println!("✅ Updated password for user '{}'", username);
+    println!("✅ Updated password for user '{username}'");
     
     Ok(())
 }
@@ -237,11 +237,11 @@ fn list_users(file_path: &str) -> Result<()> {
     let users = load_users(file_path)?;
     
     if users.is_empty() {
-        println!("No users found in {}", file_path);
+        println!("No users found in {file_path}");
         return Ok(());
     }
     
-    println!("Users in {}:", file_path);
+    println!("Users in {file_path}:");
     println!("┌─────────────────┬──────────────────────────────────────────────┐");
     println!("│ Username        │ Password Hash (first 40 chars)              │");
     println!("├─────────────────┼──────────────────────────────────────────────┤");
@@ -255,7 +255,7 @@ fn list_users(file_path: &str) -> Result<()> {
         } else {
             hash.clone()
         };
-        println!("│ {:<15} │ {:<44} │", username, hash_preview);
+        println!("│ {username:<15} │ {hash_preview:<44} │");
     }
     
     println!("└─────────────────┴──────────────────────────────────────────────┘");
@@ -281,9 +281,9 @@ fn verify_user(file_path: &str, username: &str, password: &str) -> Result<()> {
     };
     
     if verify_password(password, hash)? {
-        println!("✅ Password correct for user '{}'", username);
+        println!("✅ Password correct for user '{username}'");
     } else {
-        println!("❌ Password incorrect for user '{}'", username);
+        println!("❌ Password incorrect for user '{username}'");
     }
     
     Ok(())
