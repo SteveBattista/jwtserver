@@ -212,6 +212,101 @@ async fn user(req: actix_web::HttpRequest, secret: web::Data<Vec<u8>>) -> Result
     Ok(HttpResponse::Unauthorized().body("Invalid or missing token"))
 }
 
+/// Returns JWT token information and decoded claims for debugging/inspection.
+/// 
+/// # Arguments
+/// * `req` - HTTP request containing Authorization header
+/// * `secret` - JWT signing secret for token validation
+/// 
+/// # Returns
+/// * `Result<HttpResponse, Error>` - JSON with token details or unauthorized error
+/// 
+/// # Process
+/// 1. Extracts JWT token from Authorization header
+/// 2. Validates token signature and expiration
+/// 3. Returns token header, claims, and metadata
+/// 
+/// # Examples
+/// GET /token-info with "Authorization: Bearer <jwt_token>"
+async fn token_info(req: actix_web::HttpRequest, secret: web::Data<Vec<u8>>) -> Result<HttpResponse, Error> {
+    let auth_header = req.headers().get("Authorization");
+    if let Some(header_value) = auth_header
+        && let Ok(auth_str) = header_value.to_str()
+        && let Some(token) = auth_str.strip_prefix("Bearer ")
+    {
+        let validation = Validation::new(Algorithm::HS512);
+        if let Ok(token_data) =
+            decode::<Claims>(token, &DecodingKey::from_secret(&secret), &validation)
+        {
+            let current_time = chrono::Utc::now().timestamp() as usize;
+            let expires_in = token_data.claims.exp.saturating_sub(current_time);
+            
+            return Ok(HttpResponse::Ok().json(serde_json::json!({
+                "valid": true,
+                "token": token,
+                "header": token_data.header,
+                "claims": token_data.claims,
+                "issued_for": token_data.claims.sub,
+                "expires_at": token_data.claims.exp,
+                "expires_in_seconds": expires_in,
+                "current_time": current_time
+            })));
+        }
+    }
+    Ok(HttpResponse::Unauthorized().json(serde_json::json!({
+        "valid": false,
+        "error": "Invalid or missing token"
+    })))
+}
+
+/// Validates a JWT token and returns success or failure status.
+/// 
+/// # Arguments
+/// * `token_request` - JSON payload containing the JWT token to validate
+/// * `secret` - JWT signing secret for token validation
+/// 
+/// # Returns
+/// * `HttpResponse` - JSON with validation result and token status
+/// 
+/// # Process
+/// 1. Extracts token from JSON request body
+/// 2. Validates token signature and expiration
+/// 3. Returns validation status with reason
+/// 
+/// # Examples
+/// POST /validate-token with {"token": "<jwt_token>"}
+async fn validate_token(token_request: web::Json<serde_json::Value>, secret: web::Data<Vec<u8>>) -> impl Responder {
+    let Some(token) = token_request.get("token").and_then(|t| t.as_str()) else {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "valid": false,
+            "error": "Missing 'token' field in request body"
+        }));
+    };
+
+    let validation = Validation::new(Algorithm::HS512);
+    match decode::<Claims>(token, &DecodingKey::from_secret(&secret), &validation) {
+        Ok(token_data) => {
+            let current_time = chrono::Utc::now().timestamp() as usize;
+            let expires_in = token_data.claims.exp.saturating_sub(current_time);
+            
+            HttpResponse::Ok().json(serde_json::json!({
+                "valid": true,
+                "message": "Token is valid",
+                "user": token_data.claims.sub,
+                "expires_at": token_data.claims.exp,
+                "expires_in_seconds": expires_in,
+                "current_time": current_time
+            }))
+        },
+        Err(err) => {
+            HttpResponse::Unauthorized().json(serde_json::json!({
+                "valid": false,
+                "error": format!("Token validation failed: {}", err)
+            }))
+        }
+    }
+}
+
 /// Main application entry point - configures and starts the JWT authentication server.
 /// 
 /// # Returns
@@ -229,14 +324,16 @@ async fn user(req: actix_web::HttpRequest, secret: web::Data<Vec<u8>>) -> Result
 /// - `/login` - POST endpoint for authentication
 /// - `/user` - GET endpoint for authenticated users
 /// - `/protected` - GET endpoint for admin users only
+/// - `/token-info` - GET endpoint to inspect JWT token details
+/// - `/validate-token` - POST endpoint to validate JWT token
 /// 
 /// # Examples
-/// Server starts at: http://0.0.0.1:4000
+/// Server starts at: http://127.0.0.1:4000
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init();
     let secret = load_secret("secret.key").expect("Failed to load secret key");
-    println!("Starting server at http://0.0.0.1:4000");
+    println!("Starting server at http://0.0.0.0:4000");
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(secret.clone()))
@@ -245,6 +342,8 @@ async fn main() -> std::io::Result<()> {
             .route("/login", web::post().to(login))
             .route("/protected", web::get().to(protected))
             .route("/user", web::get().to(user))
+            .route("/token-info", web::get().to(token_info))
+            .route("/validate-token", web::post().to(validate_token))
             // Static file serving
             .service(fs::Files::new("/", "./static").index_file("login.html"))
     })

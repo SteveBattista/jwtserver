@@ -10,6 +10,7 @@
         "HMAC",
         "jsonwebtoken",
         "jwtserver",
+        "nottoken",
         "serde",
         "urandom",
         "venv"

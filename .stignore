@@ -3,4 +3,5 @@ target/release/incremental/
 target/release/build
 target/release/.fingerprint
 target/release/incremental
+user_manager/
 .git

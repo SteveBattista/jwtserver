@@ -1,4 +1,5 @@
-POST http://127.0.0.1:4000/login
+### Login as admin
+POST http://jwt.battistas.org/login
 Content-Type: application/json
 
 {
@@ -6,8 +7,8 @@ Content-Type: application/json
     "password": "admin"
 }
 
-###
-POST http://127.0.0.1:4000/login
+### Login as user1
+POST http://jwt.battistas.org/login
 Content-Type: application/json
 
 {
@@ -15,20 +16,52 @@ Content-Type: application/json
     "password": "password1"
 }
 
-###
-GET http://127.0.0.1:4000/protected HTTP/1.1
-Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTc1NTAwODk2NH0.g8lu-_WR8xaKcXmExLjzdbJvl1AFvq57qxwztx7DEPfz4_xSm-wEHtNfgOj5Y0fxkXKwGNMB1dMt2BmkxXvKPQ
+### Test user endpoint (requires any valid JWT)
+GET http://jwt.battistas.org/user
+Authorization: Bearer <token>
+
+### Test protected endpoint (requires admin JWT)
+GET http://jwt.battistas.org/protected
+Authorization: Bearer <token>
+
+### Get JWT token information and details
+GET http://jwt.battistas.org/token-info
+Authorization: Bearer <token>
+
+### Validate JWT token via POST request
+POST http://jwt.battistas.org/validate-token
+Content-Type: application/json
+
+{
+    "token": "<token>"
+}
+
+### Test with invalid token
+POST http://jwt.battistas.org/validate-token
+Content-Type: application/json
+
+{
+    "token": "invalid.jwt.token"
+}
+
+### Test without token field
+POST http://jwt.battistas.org/validate-token
+Content-Type: application/json
+
+{
+    "nottoken": "missing field test"
+}
 
 ###
 
-GET http://127.0.0.1:4000/protected HTTP/1.1
+GET http://jwt.battistas.org/protected HTTP/1.1
 Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ1c2VyMSIsImV4cCI6MTc1NTAwODk5MH0.53nnQK9rvfK3EfERqeTIqfJdCilr1R6tTi2zPqOUUJHxjheqbtQBIfhNWmY0inaLcxl9QBsDBh3LjR-EywgisQ
 
 ###
-GET http://127.0.0.1:4000/user HTTP/1.1
+GET http://jwt.battistas.org/user HTTP/1.1
 Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTc1NTAwODk2NH0.g8lu-_WR8xaKcXmExLjzdbJvl1AFvq57qxwztx7DEPfz4_xSm-wEHtNfgOj5Y0fxkXKwGNMB1dMt2BmkxXvKPQ
 
 ###
 
-GET http://127.0.0.1:4000/user HTTP/1.1
+GET http://jwt.battistas.org/user HTTP/1.1
 Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ1c2VyMSIsImV4cCI6MTc1NTAwODk5MH0.53nnQK9rvfK3EfERqeTIqfJdCilr1R6tTi2zPqOUUJHxjheqbtQBIfhNWmY0inaLcxl9QBsDBh3LjR-EywgisQ
