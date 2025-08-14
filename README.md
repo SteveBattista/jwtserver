@@ -8,8 +8,9 @@ A secure JWT authentication server built with Rust and Actix-web using asymmetri
 - Users loaded from `users.txt`
 - RSA private key loaded from `private.pem` for JWT signing
 - RSA public key loaded from `jwt_public.pem` for JWT verification
-- Endpoints: `/login`, `/user` (auth required), `/protected` (admin-only), `/token-info`, `/validate-token`
+- Endpoints: `/login`, `/user` (auth required), `/protected` (admin-only), `/token-info`, `/validate-token`, `/.well-known/public.pem`
 - Static file serving with demo login page
+- Public key discovery endpoint for distributed JWT verification
 - Listens on `http://0.0.0.0:4000`
 
 ## Prerequisites
@@ -88,6 +89,10 @@ http://0.0.0.0:4000
   - Body JSON: `{ "token": "<JWT>" }`
   - Returns validation status and token details.
 
+- GET `/.well-known/public.pem`
+  - Returns the RSA public key in PEM format for JWT verification.
+  - Allows other services to discover and retrieve the public key.
+
 - GET `/`
   - Serves static demo login page for testing authentication flow.
 
@@ -123,6 +128,9 @@ Content-Type: application/json
 {
   "token": "<token>"
 }
+
+### Get public key for verification
+GET http://127.0.0.1:4000/.well-known/public.pem
 ```
 
 ## Configuration notes
@@ -137,9 +145,10 @@ Content-Type: application/json
 
 - **Never commit RSA private key (`private.pem`) to source control** - keep it secure and access-controlled.
 - Do not commit `users.txt` to source control as it contains password hashes.
-- RSA-2048 keys provide strong asymmetric security; consider RSA-4096 for higher security requirements.
+- RSA-4096 keys provide excellent asymmetric security; RSA-2048 is minimum recommended for production.
 - Asymmetric keys allow for distributed verification without sharing signing secrets.
 - Public key (`jwt_public.pem`) can be safely shared for token verification by other services.
+- Public key is available via the `/.well-known/public.pem` endpoint for automated discovery.
 - Argon2id hashes embed salt and parameters; keep them strong (default settings are reasonable).
 - Prefer HTTPS in production and rotate your RSA keys regularly.
 - Consider using hardware security modules (HSM) for private key protection in production.
@@ -158,6 +167,17 @@ See `user_manager/README.md` for detailed usage instructions.
 ## Demo Pages
 
 Access the demo login interface at `http://0.0.0.0:4000/` to test the authentication flow with a web interface.
+
+## Public Key Discovery
+
+The server provides a standard `.well-known` endpoint for public key discovery:
+
+```bash
+# Retrieve the public key for JWT verification
+curl http://0.0.0.0:4000/.well-known/public.pem
+```
+
+This allows other services to automatically discover and retrieve the RSA public key for JWT token verification without manual key distribution.
 
 ## License
 

@@ -322,6 +322,32 @@ async fn validate_token(token_request: web::Json<serde_json::Value>, public_key:
     }
 }
 
+/// Serves the RSA public key for JWT verification at .well-known/public.pem
+/// 
+/// # Returns
+/// * `Result<HttpResponse, Error>` - The public key in PEM format with appropriate content type
+/// 
+/// # Process
+/// 1. Reads the public key from jwt_public.pem file
+/// 2. Returns it with text/plain content type for easy consumption
+/// 3. Allows other services to discover and use the public key for JWT verification
+/// 
+/// # Examples
+/// GET /.well-known/public.pem
+async fn well_known_public_key() -> Result<HttpResponse, Error> {
+    match std::fs::read_to_string("jwt_public.pem") {
+        Ok(public_key_content) => {
+            Ok(HttpResponse::Ok()
+                .content_type("text/plain")
+                .body(public_key_content))
+        },
+        Err(_) => {
+            Ok(HttpResponse::InternalServerError()
+                .body("Failed to read public key file"))
+        }
+    }
+}
+
 /// Main application entry point - configures and starts the JWT authentication server.
 /// 
 /// # Returns
@@ -331,7 +357,7 @@ async fn validate_token(token_request: web::Json<serde_json::Value>, public_key:
 /// - Loads RSA private key from "private.pem" file for JWT signing
 /// - Loads RSA public key from "`jwt_public.pem`" file for JWT verification
 /// - Uses RS512 algorithm for asymmetric JWT authentication
-/// - Binds to 0.0.0.1:4000
+/// - Binds to 0.0.0.0:4000
 /// - Serves static files from "./static" directory
 /// - Configures API routes: /login, /user, /protected
 /// - Sets up request logging middleware
@@ -343,6 +369,7 @@ async fn validate_token(token_request: web::Json<serde_json::Value>, public_key:
 /// - `/protected` - GET endpoint for admin users only
 /// - `/token-info` - GET endpoint to inspect JWT token details
 /// - `/validate-token` - POST endpoint to validate JWT token
+/// - `/.well-known/public.pem` - GET endpoint to retrieve the RSA public key for JWT verification
 /// 
 /// # Examples
 /// Server starts at: <http://0.0.0.0:4000>
@@ -364,6 +391,8 @@ async fn main() -> std::io::Result<()> {
             .route("/user", web::get().to(user))
             .route("/token-info", web::get().to(token_info))
             .route("/validate-token", web::post().to(validate_token))
+            // Well-known endpoints
+            .route("/.well-known/public.pem", web::get().to(well_known_public_key))
             // Static file serving
             .service(fs::Files::new("/", "./static").index_file("login.html"))
     })
