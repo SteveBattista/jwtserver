@@ -23,8 +23,8 @@ A secure JWT authentication server built with Rust and Actix-web using asymmetri
 1. Generate RSA key pair for JWT signing/verification:
 
     ```bash
-    # Generate RSA private key (2048-bit)
-    openssl genpkey -algorithm RSA -out private.pem -pkeyopt rsa_keygen_bits:2048
+    # Generate RSA private key (4096-bit)
+    openssl genpkey -algorithm RSA -out private.pem -pkeyopt rsa_keygen_bits:4096
 
     # Extract public key from private key
     openssl rsa -pubout -in private.pem -out jwt_public.pem
