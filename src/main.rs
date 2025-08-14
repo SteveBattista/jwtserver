@@ -173,7 +173,7 @@ async fn login(auth: web::Json<AuthData>, private_key: web::Data<EncodingKey>) -
 /// 4. Returns success for admin, forbidden for other valid users
 /// 
 /// # Examples
-/// GET /protected with "Authorization: Bearer <jwt_token>"
+/// GET /protected with "Authorization: Bearer <`jwt_token`>"
 async fn protected(req: actix_web::HttpRequest, public_key: web::Data<DecodingKey>) -> Result<HttpResponse, Error> {
     let auth_header = req.headers().get("Authorization");
     if let Some(header_value) = auth_header
@@ -208,7 +208,7 @@ async fn protected(req: actix_web::HttpRequest, public_key: web::Data<DecodingKe
 /// 3. Returns user information from token claims
 /// 
 /// # Examples
-/// GET /user with "Authorization: Bearer <jwt_token>"
+/// GET /user with "Authorization: Bearer <`jwt_token`>"
 async fn user(req: actix_web::HttpRequest, public_key: web::Data<DecodingKey>) -> Result<HttpResponse, Error> {
     let auth_header = req.headers().get("Authorization");
     if let Some(header_value) = auth_header
@@ -242,7 +242,7 @@ async fn user(req: actix_web::HttpRequest, public_key: web::Data<DecodingKey>) -
 /// 3. Returns token header, claims, and metadata
 /// 
 /// # Examples
-/// GET /token-info with "Authorization: Bearer <jwt_token>"
+/// GET /token-info with "Authorization: Bearer <`jwt_token`>"
 async fn token_info(req: actix_web::HttpRequest, public_key: web::Data<DecodingKey>) -> Result<HttpResponse, Error> {
     let auth_header = req.headers().get("Authorization");
     if let Some(header_value) = auth_header
@@ -253,7 +253,7 @@ async fn token_info(req: actix_web::HttpRequest, public_key: web::Data<DecodingK
         if let Ok(token_data) =
             decode::<Claims>(token, &public_key, &validation)
         {
-            let current_time = chrono::Utc::now().timestamp() as usize;
+            let current_time = usize::try_from(chrono::Utc::now().timestamp()).unwrap_or_default();
             let expires_in = token_data.claims.exp.saturating_sub(current_time);
             
             return Ok(HttpResponse::Ok().json(serde_json::json!({
@@ -289,7 +289,7 @@ async fn token_info(req: actix_web::HttpRequest, public_key: web::Data<DecodingK
 /// 3. Returns validation status with reason
 /// 
 /// # Examples
-/// POST /validate-token with {"token": "<jwt_token>"}
+/// POST /validate-token with {"token": "<`jwt_token`>"}
 async fn validate_token(token_request: web::Json<serde_json::Value>, public_key: web::Data<DecodingKey>) -> impl Responder {
     let Some(token) = token_request.get("token").and_then(|t| t.as_str()) else {
         return HttpResponse::BadRequest().json(serde_json::json!({
@@ -301,7 +301,7 @@ async fn validate_token(token_request: web::Json<serde_json::Value>, public_key:
     let validation = Validation::new(Algorithm::RS512);
     match decode::<Claims>(token, &public_key, &validation) {
         Ok(token_data) => {
-            let current_time = chrono::Utc::now().timestamp() as usize;
+            let current_time = usize::try_from(chrono::Utc::now().timestamp()).unwrap_or_default();
             let expires_in = token_data.claims.exp.saturating_sub(current_time);
             
             HttpResponse::Ok().json(serde_json::json!({
@@ -329,7 +329,7 @@ async fn validate_token(token_request: web::Json<serde_json::Value>, public_key:
 /// 
 /// # Server Configuration
 /// - Loads RSA private key from "private.pem" file for JWT signing
-/// - Loads RSA public key from "jwt_public.pem" file for JWT verification
+/// - Loads RSA public key from "`jwt_public.pem`" file for JWT verification
 /// - Uses RS512 algorithm for asymmetric JWT authentication
 /// - Binds to 0.0.0.1:4000
 /// - Serves static files from "./static" directory
@@ -345,7 +345,7 @@ async fn validate_token(token_request: web::Json<serde_json::Value>, public_key:
 /// - `/validate-token` - POST endpoint to validate JWT token
 /// 
 /// # Examples
-/// Server starts at: http://127.0.0.1:4000
+/// Server starts at: <http://0.0.0.0:4000>
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init();
