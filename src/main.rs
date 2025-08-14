@@ -322,7 +322,7 @@ async fn validate_token(token_request: web::Json<serde_json::Value>, public_key:
     }
 }
 
-/// Serves the RSA public key for JWT verification at .well-known/public.pem
+/// Serves the RSA public key for JWT verification at well-known/public.pem
 /// 
 /// # Returns
 /// * `Result<HttpResponse, Error>` - The public key in PEM format with appropriate content type
@@ -333,7 +333,7 @@ async fn validate_token(token_request: web::Json<serde_json::Value>, public_key:
 /// 3. Allows other services to discover and use the public key for JWT verification
 /// 
 /// # Examples
-/// GET /.well-known/public.pem
+/// GET /well-known/public.pem
 async fn well_known_public_key() -> Result<HttpResponse, Error> {
     match std::fs::read_to_string("jwt_public.pem") {
         Ok(public_key_content) => {
@@ -369,7 +369,7 @@ async fn well_known_public_key() -> Result<HttpResponse, Error> {
 /// - `/protected` - GET endpoint for admin users only
 /// - `/token-info` - GET endpoint to inspect JWT token details
 /// - `/validate-token` - POST endpoint to validate JWT token
-/// - `/.well-known/public.pem` - GET endpoint to retrieve the RSA public key for JWT verification
+/// - `/well-known/public.pem` - GET endpoint to retrieve the RSA public key for JWT verification
 /// 
 /// # Examples
 /// Server starts at: <http://0.0.0.0:4000>
@@ -392,7 +392,7 @@ async fn main() -> std::io::Result<()> {
             .route("/token-info", web::get().to(token_info))
             .route("/validate-token", web::post().to(validate_token))
             // Well-known endpoints
-            .route("/.well-known/public.pem", web::get().to(well_known_public_key))
+            .route("/well-known/public.pem", web::get().to(well_known_public_key))
             // Static file serving
             .service(fs::Files::new("/", "./static").index_file("login.html"))
     })
