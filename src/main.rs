@@ -32,25 +32,40 @@ struct AuthData {
 }
 
 
-/// Loads the JWT signing secret from a file.
+/// Loads the RSA private key from a PEM file for JWT signing.
 /// 
 /// # Arguments
-/// * `path` - The file path containing the secret key
+/// * `path` - The file path containing the RSA private key in PEM format
 /// 
 /// # Returns
-/// * `Result<Vec<u8>>` - The secret key as bytes, or an error if the file cannot be read
+/// * `Result<EncodingKey>` - The encoding key for JWT signing, or an error if the file cannot be read
 /// 
 /// # Examples
 /// ```
-/// let secret = load_secret("secret.key")?;
+/// let private_key = load_private_key("private.pem")?;
 /// ```
-fn load_secret(path: &str) -> Result<Vec<u8>> {
-    let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
-    let mut secret = String::new();
-    use std::io::Read;
-    reader.read_to_string(&mut secret)?;
-    Ok(secret.trim().as_bytes().to_vec())
+fn load_private_key(path: &str) -> Result<EncodingKey> {
+    let key_data = std::fs::read(path)?;
+    let key = EncodingKey::from_rsa_pem(&key_data)?;
+    Ok(key)
+}
+
+/// Loads the RSA public key from a PEM file for JWT verification.
+/// 
+/// # Arguments
+/// * `path` - The file path containing the RSA public key in PEM format
+/// 
+/// # Returns
+/// * `Result<DecodingKey>` - The decoding key for JWT verification, or an error if the file cannot be read
+/// 
+/// # Examples
+/// ```
+/// let public_key = load_public_key("jwt_public.pem")?;
+/// ```
+fn load_public_key(path: &str) -> Result<DecodingKey> {
+    let key_data = std::fs::read(path)?;
+    let key = DecodingKey::from_rsa_pem(&key_data)?;
+    Ok(key)
 }
 
 /// Loads user credentials and their Argon2id password hashes from a file.
@@ -85,7 +100,7 @@ fn load_user_hashes(path: &str) -> Result<HashMap<String, String>> {
 /// 
 /// # Arguments
 /// * `auth` - JSON payload containing username and password
-/// * `secret` - JWT signing secret loaded from file
+/// * `private_key` - RSA private key for JWT signing
 /// 
 /// # Returns
 /// * `HttpResponse` - JSON with JWT token on success, or error message on failure
@@ -93,12 +108,12 @@ fn load_user_hashes(path: &str) -> Result<HashMap<String, String>> {
 /// # Process
 /// 1. Loads user database from users.txt
 /// 2. Verifies password using Argon2id hashing
-/// 3. Generates JWT token with 60-minute expiration
+/// 3. Generates JWT token with RS512 algorithm and 60-minute expiration
 /// 4. Returns token or authentication error
 /// 
 /// # Examples
 /// POST /login with {"username": "admin", "password": "admin"}
-async fn login(auth: web::Json<AuthData>, secret: web::Data<Vec<u8>>) -> impl Responder {
+async fn login(auth: web::Json<AuthData>, private_key: web::Data<EncodingKey>) -> impl Responder {
     let Ok(users) = load_user_hashes("users.txt") else {
         return HttpResponse::InternalServerError().body("Failed to load user db");
     };
@@ -129,11 +144,11 @@ async fn login(auth: web::Json<AuthData>, secret: web::Data<Vec<u8>>) -> impl Re
                     sub: auth.username.clone(),
                     exp: expiration.unwrap(),
                 };
-                let header = Header::new(Algorithm::HS512);
+                let header = Header::new(Algorithm::RS512);
                 let token = encode(
                     &header,
                     &claims,
-                    &EncodingKey::from_secret(&secret),
+                    &private_key,
                 ).unwrap();
                 return HttpResponse::Ok().json(serde_json::json!({"token": token}));
             }
@@ -146,28 +161,28 @@ async fn login(auth: web::Json<AuthData>, secret: web::Data<Vec<u8>>) -> impl Re
 /// 
 /// # Arguments
 /// * `req` - HTTP request containing Authorization header
-/// * `secret` - JWT signing secret for token validation
+/// * `public_key` - RSA public key for JWT token validation
 /// 
 /// # Returns
 /// * `Result<HttpResponse, Error>` - Success response for admin users, forbidden/unauthorized for others
 /// 
 /// # Process
 /// 1. Extracts JWT token from Authorization header
-/// 2. Validates token signature and expiration
+/// 2. Validates token signature and expiration using RS512 algorithm
 /// 3. Checks if user is "admin"
 /// 4. Returns success for admin, forbidden for other valid users
 /// 
 /// # Examples
 /// GET /protected with "Authorization: Bearer <jwt_token>"
-async fn protected(req: actix_web::HttpRequest, secret: web::Data<Vec<u8>>) -> Result<HttpResponse, Error> {
+async fn protected(req: actix_web::HttpRequest, public_key: web::Data<DecodingKey>) -> Result<HttpResponse, Error> {
     let auth_header = req.headers().get("Authorization");
     if let Some(header_value) = auth_header
         && let Ok(auth_str) = header_value.to_str()
         && let Some(token) = auth_str.strip_prefix("Bearer ")
     {
-        let validation = Validation::new(Algorithm::HS512);
+        let validation = Validation::new(Algorithm::RS512);
         if let Ok(token_data) =
-            decode::<Claims>(token, &DecodingKey::from_secret(&secret), &validation)
+            decode::<Claims>(token, &public_key, &validation)
         {
             if token_data.claims.sub == "admin" {
                 return Ok(HttpResponse::Ok().json(serde_json::json!({"message": "Access granted (admin only)", "user": token_data.claims.sub})));
@@ -182,27 +197,27 @@ async fn protected(req: actix_web::HttpRequest, secret: web::Data<Vec<u8>>) -> R
 /// 
 /// # Arguments
 /// * `req` - HTTP request containing Authorization header
-/// * `secret` - JWT signing secret for token validation
+/// * `public_key` - RSA public key for JWT token validation
 /// 
 /// # Returns
 /// * `Result<HttpResponse, Error>` - Success response with user info, or unauthorized error
 /// 
 /// # Process
 /// 1. Extracts JWT token from Authorization header
-/// 2. Validates token signature and expiration
+/// 2. Validates token signature and expiration using RS512 algorithm
 /// 3. Returns user information from token claims
 /// 
 /// # Examples
 /// GET /user with "Authorization: Bearer <jwt_token>"
-async fn user(req: actix_web::HttpRequest, secret: web::Data<Vec<u8>>) -> Result<HttpResponse, Error> {
+async fn user(req: actix_web::HttpRequest, public_key: web::Data<DecodingKey>) -> Result<HttpResponse, Error> {
     let auth_header = req.headers().get("Authorization");
     if let Some(header_value) = auth_header
         && let Ok(auth_str) = header_value.to_str()
         && let Some(token) = auth_str.strip_prefix("Bearer ")
     {
-        let validation = Validation::new(Algorithm::HS512);
+        let validation = Validation::new(Algorithm::RS512);
         if let Ok(token_data) =
-            decode::<Claims>(token, &DecodingKey::from_secret(&secret), &validation)
+            decode::<Claims>(token, &public_key, &validation)
         {
             return Ok(HttpResponse::Ok().json(
                 serde_json::json!({"message": "Access granted", "user": token_data.claims.sub}),
@@ -216,27 +231,27 @@ async fn user(req: actix_web::HttpRequest, secret: web::Data<Vec<u8>>) -> Result
 /// 
 /// # Arguments
 /// * `req` - HTTP request containing Authorization header
-/// * `secret` - JWT signing secret for token validation
+/// * `public_key` - RSA public key for JWT token validation
 /// 
 /// # Returns
 /// * `Result<HttpResponse, Error>` - JSON with token details or unauthorized error
 /// 
 /// # Process
 /// 1. Extracts JWT token from Authorization header
-/// 2. Validates token signature and expiration
+/// 2. Validates token signature and expiration using RS512 algorithm
 /// 3. Returns token header, claims, and metadata
 /// 
 /// # Examples
 /// GET /token-info with "Authorization: Bearer <jwt_token>"
-async fn token_info(req: actix_web::HttpRequest, secret: web::Data<Vec<u8>>) -> Result<HttpResponse, Error> {
+async fn token_info(req: actix_web::HttpRequest, public_key: web::Data<DecodingKey>) -> Result<HttpResponse, Error> {
     let auth_header = req.headers().get("Authorization");
     if let Some(header_value) = auth_header
         && let Ok(auth_str) = header_value.to_str()
         && let Some(token) = auth_str.strip_prefix("Bearer ")
     {
-        let validation = Validation::new(Algorithm::HS512);
+        let validation = Validation::new(Algorithm::RS512);
         if let Ok(token_data) =
-            decode::<Claims>(token, &DecodingKey::from_secret(&secret), &validation)
+            decode::<Claims>(token, &public_key, &validation)
         {
             let current_time = chrono::Utc::now().timestamp() as usize;
             let expires_in = token_data.claims.exp.saturating_sub(current_time);
@@ -263,19 +278,19 @@ async fn token_info(req: actix_web::HttpRequest, secret: web::Data<Vec<u8>>) -> 
 /// 
 /// # Arguments
 /// * `token_request` - JSON payload containing the JWT token to validate
-/// * `secret` - JWT signing secret for token validation
+/// * `public_key` - RSA public key for JWT token validation
 /// 
 /// # Returns
 /// * `HttpResponse` - JSON with validation result and token status
 /// 
 /// # Process
 /// 1. Extracts token from JSON request body
-/// 2. Validates token signature and expiration
+/// 2. Validates token signature and expiration using RS512 algorithm
 /// 3. Returns validation status with reason
 /// 
 /// # Examples
 /// POST /validate-token with {"token": "<jwt_token>"}
-async fn validate_token(token_request: web::Json<serde_json::Value>, secret: web::Data<Vec<u8>>) -> impl Responder {
+async fn validate_token(token_request: web::Json<serde_json::Value>, public_key: web::Data<DecodingKey>) -> impl Responder {
     let Some(token) = token_request.get("token").and_then(|t| t.as_str()) else {
         return HttpResponse::BadRequest().json(serde_json::json!({
             "valid": false,
@@ -283,8 +298,8 @@ async fn validate_token(token_request: web::Json<serde_json::Value>, secret: web
         }));
     };
 
-    let validation = Validation::new(Algorithm::HS512);
-    match decode::<Claims>(token, &DecodingKey::from_secret(&secret), &validation) {
+    let validation = Validation::new(Algorithm::RS512);
+    match decode::<Claims>(token, &public_key, &validation) {
         Ok(token_data) => {
             let current_time = chrono::Utc::now().timestamp() as usize;
             let expires_in = token_data.claims.exp.saturating_sub(current_time);
@@ -313,7 +328,9 @@ async fn validate_token(token_request: web::Json<serde_json::Value>, secret: web
 /// * `std::io::Result<()>` - Success or IO error from server startup
 /// 
 /// # Server Configuration
-/// - Loads JWT secret from "secret.key" file
+/// - Loads RSA private key from "private.pem" file for JWT signing
+/// - Loads RSA public key from "jwt_public.pem" file for JWT verification
+/// - Uses RS512 algorithm for asymmetric JWT authentication
 /// - Binds to 0.0.0.1:4000
 /// - Serves static files from "./static" directory
 /// - Configures API routes: /login, /user, /protected
@@ -332,11 +349,14 @@ async fn validate_token(token_request: web::Json<serde_json::Value>, secret: web
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init();
-    let secret = load_secret("secret.key").expect("Failed to load secret key");
+    let private_key = load_private_key("private.pem").expect("Failed to load RSA private key");
+    let public_key = load_public_key("jwt_public.pem").expect("Failed to load RSA public key");
     println!("Starting server at http://0.0.0.0:4000");
+    println!("Using RSA keys for JWT signing and verification");
     HttpServer::new(move || {
         App::new()
-            .app_data(web::Data::new(secret.clone()))
+            .app_data(web::Data::new(private_key.clone()))
+            .app_data(web::Data::new(public_key.clone()))
             .wrap(Logger::default())
             // API routes
             .route("/login", web::post().to(login))

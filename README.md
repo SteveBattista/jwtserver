@@ -1,35 +1,36 @@
 # JWT Authentication Server (Rust + Actix-web)
 
-A minimal JWT authentication server built with Rust and Actix-web.
+A secure JWT authentication server built with Rust and Actix-web using asymmetric RSA keys.
 
-- JSON Web Tokens signed with HS512 (HMAC-SHA512)
+- JSON Web Tokens signed with RS512 (RSA-SHA512) for enhanced security
+- Asymmetric key authentication using RSA private/public key pair
 - Passwords stored as Argon2id hashes
 - Users loaded from `users.txt`
-- Signing secret loaded from `secret.key`
-- Endpoints: `/login`, `/user` (auth required), `/protected` (admin-only)
-- Listens on `http://127.0.0.1:4000`
+- RSA private key loaded from `private.pem` for JWT signing
+- RSA public key loaded from `jwt_public.pem` for JWT verification
+- Endpoints: `/login`, `/user` (auth required), `/protected` (admin-only), `/token-info`, `/validate-token`
+- Static file serving with demo login page
+- Listens on `http://0.0.0.0:4000`
 
 ## Prerequisites
 
 - Rust (stable) and Cargo
-- A strong secret in `secret.key`
+- RSA private/public key pair (`private.pem` and `jwt_public.pem`)
 - A `users.txt` file with `username:argon2id-hash` lines
 
 ## Setup
 
-1. Create a strong secret key file (example commands):
+1. Generate RSA key pair for JWT signing/verification:
 
     ```bash
-    # Option A: 64 random bytes, base64-encoded
-    openssl rand -base64 64 > secret.key
+    # Generate RSA private key (2048-bit)
+    openssl genpkey -algorithm RSA -out private.pem -pkeyopt rsa_keygen_bits:2048
 
-    # Option B: 64 random bytes hashed with SHA-512 (hex)
-    python3 - << 'PY'
-    import os, hashlib
-    print(hashlib.sha512(os.urandom(64)).hexdigest())
-    PY
-    # Copy the printed value into secret.key
+    # Extract public key from private key
+    openssl rsa -pubout -in private.pem -out jwt_public.pem
     ```
+
+    **Security Note**: Keep `private.pem` secure and never share it. The `jwt_public.pem` can be shared for token verification.
 
 2. Create users with Argon2id password hashes in `users.txt`.
 
@@ -61,7 +62,7 @@ A minimal JWT authentication server built with Rust and Actix-web.
 Server starts at:
 
 ```text
-http://127.0.0.1:4000
+http://0.0.0.0:4000
 ```
 
 ## API
@@ -69,14 +70,26 @@ http://127.0.0.1:4000
 - POST `/login`
   - Body JSON: `{ "username": "admin", "password": "admin" }`
   - Returns: `{ "token": "<JWT>" }`
+  - JWT is signed with RSA private key using RS512 algorithm
 
 - GET `/user`
   - Header: `Authorization: Bearer <JWT>`
-  - Returns user info if token is valid.
+  - Returns user info if token is valid (verified with RSA public key).
 
 - GET `/protected`
   - Header: `Authorization: Bearer <JWT>`
   - Admin-only (only `sub == "admin"` allowed).
+
+- GET `/token-info`
+  - Header: `Authorization: Bearer <JWT>`
+  - Returns detailed token information including claims, expiration, and metadata.
+
+- POST `/validate-token`
+  - Body JSON: `{ "token": "<JWT>" }`
+  - Returns validation status and token details.
+
+- GET `/`
+  - Serves static demo login page for testing authentication flow.
 
 ## VS Code REST Client examples
 
@@ -98,21 +111,53 @@ Authorization: Bearer <token>
 
 GET http://127.0.0.1:4000/protected
 Authorization: Bearer <token>
+
+### Get token information
+GET http://127.0.0.1:4000/token-info
+Authorization: Bearer <token>
+
+### Validate token
+POST http://127.0.0.1:4000/validate-token
+Content-Type: application/json
+
+{
+  "token": "<token>"
+}
 ```
 
 ## Configuration notes
 
-- Port and bind address are hardcoded in `src/main.rs` at `.bind(("127.0.0.1", 4000))`. Change as needed.
-- JWT algorithm: HS512 (configured in `login`, `protected`, and `user`).
-- Secret: loaded at startup from `secret.key` and injected via Actix `app_data`.
+- Port and bind address are configured in `src/main.rs` at `.bind(("0.0.0.0", 4000))`. Change as needed.
+- JWT algorithm: RS512 (RSA-SHA512) configured in all JWT operations for enhanced security.
+- RSA keys: `private.pem` loaded at startup for signing, `jwt_public.pem` for verification via Actix `app_data`.
 - Users: loaded from `users.txt` on each login request.
+- Static files: served from `./static` directory with `login.html` as the index page.
 
 ## Security considerations
 
-- Do not commit `secret.key` or `users.txt` to source control.
-- Use a long, high-entropy secret (>= 64 random bytes).
-- Argon2id hashes embed salt and parameters; keep them strong (default settings are reasonable; tune per your environment).
-- Prefer HTTPS in production and rotate your secrets regularly.
+- **Never commit RSA private key (`private.pem`) to source control** - keep it secure and access-controlled.
+- Do not commit `users.txt` to source control as it contains password hashes.
+- RSA-2048 keys provide strong asymmetric security; consider RSA-4096 for higher security requirements.
+- Asymmetric keys allow for distributed verification without sharing signing secrets.
+- Public key (`jwt_public.pem`) can be safely shared for token verification by other services.
+- Argon2id hashes embed salt and parameters; keep them strong (default settings are reasonable).
+- Prefer HTTPS in production and rotate your RSA keys regularly.
+- Consider using hardware security modules (HSM) for private key protection in production.
+
+## User Management
+
+The project includes a companion CLI tool `user_manager` for managing users in the `users.txt` file:
+
+```bash
+cd user_manager
+cargo run -- --help
+```
+
+See `user_manager/README.md` for detailed usage instructions.
+
+## Demo Pages
+
+Access the demo login interface at `http://0.0.0.0:4000/` to test the authentication flow with a web interface.
 
 ## License
 
