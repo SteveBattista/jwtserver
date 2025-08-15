@@ -34,5 +34,41 @@
         "attestation_format": "none"
       }
     }
+  },
+  {
+    "username": "steve",
+    "credential_id": "L/Jjhi2gRGiLeKvXUFs2Hw==",
+    "passkey": {
+      "cred": {
+        "cred_id": "L_Jjhi2gRGiLeKvXUFs2Hw",
+        "cred": {
+          "type_": "ES256",
+          "key": {
+            "EC_EC2": {
+              "curve": "SECP256R1",
+              "x": "c5TiR6JaFOhBROJN371DFD1-vOFYaylDRhudM05R9eY",
+              "y": "3Kkj78kPQx2veOvgfcOd8SzIt1F1K97fbv-pIG3ATlY"
+            }
+          }
+        },
+        "counter": 0,
+        "transports": null,
+        "user_verified": true,
+        "backup_eligible": true,
+        "backup_state": true,
+        "registration_policy": "required",
+        "extensions": {
+          "cred_protect": "Ignored",
+          "hmac_create_secret": "NotRequested",
+          "appid": "NotRequested",
+          "cred_props": "Ignored"
+        },
+        "attestation": {
+          "data": "None",
+          "metadata": "None"
+        },
+        "attestation_format": "none"
+      }
+    }
   }
 ]

@@ -271,16 +271,40 @@
         // Passkey registration
         document.getElementById('passkey-register-btn').addEventListener('click', async () => {
             const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
             if (!username) {
                 showError('Please enter a username first');
+                return;
+            }
+            
+            if (!password) {
+                showError('Please enter your password to register a passkey');
                 return;
             }
 
             const registerBtn = document.getElementById('passkey-register-btn');
             registerBtn.disabled = true;
-            registerBtn.textContent = 'Registering...';
+            registerBtn.textContent = 'Verifying password...';
 
             try {
+                // First verify password by attempting login
+                const loginResponse = await fetch(`${API_BASE}/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+
+                if (!loginResponse.ok) {
+                    const error = await loginResponse.text();
+                    throw new Error(`Password verification failed: ${error}`);
+                }
+
+                // Password is correct, proceed with passkey registration
+                registerBtn.textContent = 'Registering passkey...';
+
                 // Start registration
                 const startResponse = await fetch(`${API_BASE}/passkey/register/start`, {
                     method: 'POST',
