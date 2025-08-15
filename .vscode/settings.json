@@ -19,12 +19,14 @@
         "rngs",
         "secretpass",
         "serde",
+        "serialisation",
         "supersecretpassword",
         "TDPE",
         "testpass",
         "testuser",
         "urandom",
         "venv",
+        "webauthn",
         "Zsbd"
     ]
 }

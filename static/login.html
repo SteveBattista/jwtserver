@@ -109,23 +109,123 @@
             
             <button type="submit" id="login-btn">Login</button>
         </form>
+
+        <div style="text-align: center; margin: 20px 0;">
+            <p style="color: #666;">OR</p>
+        </div>
+
+        <button type="button" id="passkey-register-btn" style="background-color: #28a745; margin-bottom: 10px;">
+            Register Passkey
+        </button>
+        
+        <button type="button" id="passkey-login-btn" style="background-color: #17a2b8;">
+            Login with Passkey
+        </button>
     </div>
 
     <script>
-        const API_BASE = 'https://jwt.battistas.org';
+        const API_BASE = 'http://localhost:4000';
         
+        // Utility function to convert base64url to Uint8Array
+        function base64urlToUint8Array(base64url) {
+            const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+            const padded = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
+            const binary = atob(padded);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return bytes;
+        }
+
+        // Utility function to convert Uint8Array to base64url
+        function uint8ArrayToBase64url(uint8Array) {
+            const base64 = btoa(String.fromCharCode(...uint8Array));
+            return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        }
+
+        // Transform credential creation options for WebAuthn
+        function transformCredentialCreateOptions(options) {
+            options.challenge = base64urlToUint8Array(options.challenge);
+            options.user.id = base64urlToUint8Array(options.user.id);
+            if (options.excludeCredentials) {
+                options.excludeCredentials = options.excludeCredentials.map(cred => ({
+                    ...cred,
+                    id: base64urlToUint8Array(cred.id)
+                }));
+            }
+            return options;
+        }
+
+        // Transform credential request options for WebAuthn
+        function transformCredentialRequestOptions(options) {
+            options.challenge = base64urlToUint8Array(options.challenge);
+            if (options.allowCredentials) {
+                options.allowCredentials = options.allowCredentials.map(cred => ({
+                    ...cred,
+                    id: base64urlToUint8Array(cred.id)
+                }));
+            }
+            return options;
+        }
+
+        // Transform credential for sending to server
+        function transformCredentialForServer(credential) {
+            return {
+                id: credential.id,
+                rawId: uint8ArrayToBase64url(new Uint8Array(credential.rawId)),
+                response: {
+                    clientDataJSON: uint8ArrayToBase64url(new Uint8Array(credential.response.clientDataJSON)),
+                    attestationObject: uint8ArrayToBase64url(new Uint8Array(credential.response.attestationObject))
+                },
+                type: credential.type
+            };
+        }
+
+        // Transform authentication credential for sending to server
+        function transformAuthCredentialForServer(credential) {
+            return {
+                id: credential.id,
+                rawId: uint8ArrayToBase64url(new Uint8Array(credential.rawId)),
+                response: {
+                    clientDataJSON: uint8ArrayToBase64url(new Uint8Array(credential.response.clientDataJSON)),
+                    authenticatorData: uint8ArrayToBase64url(new Uint8Array(credential.response.authenticatorData)),
+                    signature: uint8ArrayToBase64url(new Uint8Array(credential.response.signature)),
+                    userHandle: credential.response.userHandle ? uint8ArrayToBase64url(new Uint8Array(credential.response.userHandle)) : null
+                },
+                type: credential.type
+            };
+        }
+
+        // Show error message
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            const successDiv = document.getElementById('success-message');
+            successDiv.style.display = 'none';
+        }
+
+        // Show success message
+        function showSuccess(message) {
+            const successDiv = document.getElementById('success-message');
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.style.display = 'none';
+        }
+
+        // Traditional login form submission
         document.getElementById('login-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
             const loginBtn = document.getElementById('login-btn');
-            const errorDiv = document.getElementById('error-message');
-            const successDiv = document.getElementById('success-message');
             
             // Reset messages
-            errorDiv.style.display = 'none';
-            successDiv.style.display = 'none';
+            document.getElementById('error-message').style.display = 'none';
+            document.getElementById('success-message').style.display = 'none';
             
             // Disable button during request
             loginBtn.disabled = true;
@@ -147,8 +247,7 @@
                     localStorage.setItem('jwt_token', data.token);
                     
                     // Show success message
-                    successDiv.textContent = 'Login successful! Redirecting to dashboard...';
-                    successDiv.style.display = 'block';
+                    showSuccess('Login successful! Redirecting to dashboard...');
                     
                     // Redirect to dashboard after short delay
                     setTimeout(() => {
@@ -157,24 +256,164 @@
                     
                 } else {
                     const errorText = await response.text();
-                    errorDiv.textContent = `Login failed: ${errorText}`;
-                    errorDiv.style.display = 'block';
+                    showError(`Login failed: ${errorText}`);
                 }
                 
             } catch (error) {
-                errorDiv.textContent = `Network error: ${error.message}`;
-                errorDiv.style.display = 'block';
+                showError(`Network error: ${error.message}`);
             } finally {
                 // Re-enable button
                 loginBtn.disabled = false;
                 loginBtn.textContent = 'Login';
             }
         });
+
+        // Passkey registration
+        document.getElementById('passkey-register-btn').addEventListener('click', async () => {
+            const username = document.getElementById('username').value;
+            if (!username) {
+                showError('Please enter a username first');
+                return;
+            }
+
+            const registerBtn = document.getElementById('passkey-register-btn');
+            registerBtn.disabled = true;
+            registerBtn.textContent = 'Registering...';
+
+            try {
+                // Start registration
+                const startResponse = await fetch(`${API_BASE}/passkey/register/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username })
+                });
+
+                if (!startResponse.ok) {
+                    const error = await startResponse.text();
+                    throw new Error(error);
+                }
+
+                const options = await startResponse.json();
+                const transformedOptions = transformCredentialCreateOptions(options.publicKey);
+
+                // Create credential
+                const credential = await navigator.credentials.create({
+                    publicKey: transformedOptions
+                });
+
+                if (!credential) {
+                    throw new Error('Failed to create credential');
+                }
+
+                // Finish registration
+                const finishResponse = await fetch(`${API_BASE}/passkey/register/finish`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username,
+                        credential: transformCredentialForServer(credential)
+                    })
+                });
+
+                if (!finishResponse.ok) {
+                    const error = await finishResponse.text();
+                    throw new Error(error);
+                }
+
+                showSuccess('Passkey registered successfully! You can now use it to log in.');
+
+            } catch (error) {
+                showError(`Passkey registration failed: ${error.message}`);
+            } finally {
+                registerBtn.disabled = false;
+                registerBtn.textContent = 'Register Passkey';
+            }
+        });
+
+        // Passkey authentication
+        document.getElementById('passkey-login-btn').addEventListener('click', async () => {
+            const username = document.getElementById('username').value;
+            if (!username) {
+                showError('Please enter a username first');
+                return;
+            }
+
+            const loginBtn = document.getElementById('passkey-login-btn');
+            loginBtn.disabled = true;
+            loginBtn.textContent = 'Authenticating...';
+
+            try {
+                // Start authentication
+                const startResponse = await fetch(`${API_BASE}/passkey/auth/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username })
+                });
+
+                if (!startResponse.ok) {
+                    const error = await startResponse.text();
+                    throw new Error(error);
+                }
+
+                const options = await startResponse.json();
+                const transformedOptions = transformCredentialRequestOptions(options.publicKey);
+
+                // Get credential
+                const credential = await navigator.credentials.get({
+                    publicKey: transformedOptions
+                });
+
+                if (!credential) {
+                    throw new Error('Failed to get credential');
+                }
+
+                // Finish authentication
+                const finishResponse = await fetch(`${API_BASE}/passkey/auth/finish`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username,
+                        credential: transformAuthCredentialForServer(credential)
+                    })
+                });
+
+                if (!finishResponse.ok) {
+                    const error = await finishResponse.text();
+                    throw new Error(error);
+                }
+
+                const data = await finishResponse.json();
+                
+                // Store JWT in localStorage
+                localStorage.setItem('jwt_token', data.token);
+                
+                // Show success message
+                showSuccess('Passkey login successful! Redirecting to dashboard...');
+                
+                // Redirect to dashboard after short delay
+                setTimeout(() => {
+                    window.location.href = '/dashboard.html';
+                }, 1500);
+
+            } catch (error) {
+                showError(`Passkey login failed: ${error.message}`);
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Login with Passkey';
+            }
+        });
         
         // Check if already logged in
         if (localStorage.getItem('jwt_token')) {
-            document.getElementById('success-message').textContent = 'Already logged in. Redirecting...';
-            document.getElementById('success-message').style.display = 'block';
+            showSuccess('Already logged in. Redirecting...');
             setTimeout(() => {
                 window.location.href = '/dashboard.html';
             }, 1000);

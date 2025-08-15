@@ -1,0 +1,38 @@
+[
+  {
+    "username": "steve",
+    "credential_id": "hrVMa1q2R2W5Qzhy+++szA==",
+    "passkey": {
+      "cred": {
+        "cred_id": "hrVMa1q2R2W5Qzhy---szA",
+        "cred": {
+          "type_": "ES256",
+          "key": {
+            "EC_EC2": {
+              "curve": "SECP256R1",
+              "x": "CJbn9u1TM5yRU1fniR29QA89X4x4QLRO82pejDJikuU",
+              "y": "EfffXk2iD_4OYF-B_6yJU2CC82QLYdzAs3Q8EX4Dos4"
+            }
+          }
+        },
+        "counter": 0,
+        "transports": null,
+        "user_verified": true,
+        "backup_eligible": true,
+        "backup_state": true,
+        "registration_policy": "required",
+        "extensions": {
+          "cred_protect": "Ignored",
+          "hmac_create_secret": "NotRequested",
+          "appid": "NotRequested",
+          "cred_props": "Ignored"
+        },
+        "attestation": {
+          "data": "None",
+          "metadata": "None"
+        },
+        "attestation_format": "none"
+      }
+    }
+  }
+]

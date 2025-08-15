@@ -3,11 +3,15 @@ use actix_web::{App, Error, HttpResponse, HttpServer, Responder, web};
 use actix_files as fs;
 use anyhow::Result;
 use argon2::{PasswordHash, PasswordVerifier};
+use base64::Engine;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
+use std::sync::Mutex;
+use uuid::Uuid;
+use webauthn_rs::prelude::*;
 
 /// JWT token claims structure containing user identification and expiration.
 /// 
@@ -29,6 +33,40 @@ struct Claims {
 struct AuthData {
     username: String,
     password: String,
+}
+
+/// Passkey registration initiation request
+#[derive(Debug, Serialize, Deserialize)]
+struct PasskeyRegisterStart {
+    username: String,
+}
+
+/// Passkey registration completion request
+#[derive(Debug, Serialize, Deserialize)]
+struct PasskeyRegisterFinish {
+    username: String,
+    credential: RegisterPublicKeyCredential,
+}
+
+/// Passkey authentication initiation request
+#[derive(Debug, Serialize, Deserialize)]
+struct PasskeyAuthStart {
+    username: String,
+}
+
+/// Passkey authentication completion request
+#[derive(Debug, Serialize, Deserialize)]
+struct PasskeyAuthFinish {
+    username: String,
+    credential: PublicKeyCredential,
+}
+
+/// Stored passkey credential data
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct StoredPasskey {
+    username: String,
+    credential_id: String,
+    passkey: Passkey,
 }
 
 
@@ -94,6 +132,46 @@ fn load_user_hashes(path: &str) -> Result<HashMap<String, String>> {
         }
     }
     Ok(users)
+}
+
+/// Creates a WebAuthn instance for passkey operations
+fn create_webauthn() -> Result<Webauthn> {
+    let rp_id = "localhost";
+    let rp_origin = Url::parse("http://localhost:4000")?;
+    let builder = WebauthnBuilder::new(rp_id, &rp_origin)?;
+    Ok(builder.build()?)
+}
+
+/// Loads stored passkeys from file
+fn load_passkeys() -> Result<HashMap<String, Vec<StoredPasskey>>> {
+    let mut passkeys = HashMap::new();
+    
+    if let Ok(file) = File::open("passkeys.json") {
+        let reader = BufReader::new(file);
+        if let Ok(stored_passkeys) = serde_json::from_reader::<_, Vec<StoredPasskey>>(reader) {
+            for passkey in stored_passkeys {
+                passkeys.entry(passkey.username.clone())
+                    .or_insert_with(Vec::new)
+                    .push(passkey);
+            }
+        }
+    }
+    
+    Ok(passkeys)
+}
+
+/// Saves passkeys to file
+fn save_passkeys(passkeys: &HashMap<String, Vec<StoredPasskey>>) -> Result<()> {
+    let all_passkeys: Vec<StoredPasskey> = passkeys
+        .values()
+        .flatten()
+        .cloned()
+        .collect();
+    
+    let mut file = File::create("passkeys.json")?;
+    let json = serde_json::to_string_pretty(&all_passkeys)?;
+    file.write_all(json.as_bytes())?;
+    Ok(())
 }
 
 /// Handles user login authentication and JWT token generation.
@@ -348,6 +426,166 @@ async fn well_known_public_key() -> Result<HttpResponse, Error> {
     }
 }
 
+/// Initiates passkey registration for a user
+async fn passkey_register_start(
+    req: web::Json<PasskeyRegisterStart>,
+    _passkeys_data: web::Data<Mutex<HashMap<String, Vec<StoredPasskey>>>>,
+    challenge_data: web::Data<Mutex<HashMap<String, PasskeyRegistration>>>,
+) -> impl Responder {
+    let webauthn = match create_webauthn() {
+        Ok(wa) => wa,
+        Err(_) => return HttpResponse::InternalServerError().body("Failed to create WebAuthn instance"),
+    };
+
+    // Check if user exists in the traditional auth system
+    let Ok(users) = load_user_hashes("users.txt") else {
+        return HttpResponse::InternalServerError().body("Failed to load user db");
+    };
+
+    if !users.contains_key(&req.username) {
+        return HttpResponse::BadRequest().body("User must be registered with password first");
+    }
+
+    let user_unique_id = Uuid::new_v4();
+    let (ccr, skr) = match webauthn.start_passkey_registration(
+        user_unique_id,
+        &req.username,
+        &req.username,
+        None,
+    ) {
+        Ok((ccr, skr)) => (ccr, skr),
+        Err(_) => return HttpResponse::InternalServerError().body("Failed to start registration"),
+    };
+
+    // Store the challenge
+    let mut challenges = challenge_data.lock().unwrap();
+    challenges.insert(req.username.clone(), skr);
+
+    HttpResponse::Ok().json(ccr)
+}
+
+/// Completes passkey registration for a user
+async fn passkey_register_finish(
+    req: web::Json<PasskeyRegisterFinish>,
+    passkeys_data: web::Data<Mutex<HashMap<String, Vec<StoredPasskey>>>>,
+    challenge_data: web::Data<Mutex<HashMap<String, PasskeyRegistration>>>,
+) -> impl Responder {
+    let webauthn = match create_webauthn() {
+        Ok(wa) => wa,
+        Err(_) => return HttpResponse::InternalServerError().body("Failed to create WebAuthn instance"),
+    };
+
+    // Retrieve the challenge
+    let mut challenges = challenge_data.lock().unwrap();
+    let skr = match challenges.remove(&req.username) {
+        Some(skr) => skr,
+        None => return HttpResponse::BadRequest().body("No active registration challenge"),
+    };
+
+    let passkey = match webauthn.finish_passkey_registration(&req.credential, &skr) {
+        Ok(passkey) => passkey,
+        Err(_) => return HttpResponse::BadRequest().body("Failed to verify registration"),
+    };
+
+    // Store the passkey
+    let stored_passkey = StoredPasskey {
+        username: req.username.clone(),
+        credential_id: base64::engine::general_purpose::STANDARD.encode(passkey.cred_id()),
+        passkey,
+    };
+
+    let mut passkeys = passkeys_data.lock().unwrap();
+    passkeys.entry(req.username.clone())
+        .or_insert_with(Vec::new)
+        .push(stored_passkey);
+
+    // Save to file
+    if let Err(_) = save_passkeys(&passkeys) {
+        return HttpResponse::InternalServerError().body("Failed to save passkey");
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({"success": true, "message": "Passkey registered successfully"}))
+}
+
+/// Initiates passkey authentication
+async fn passkey_auth_start(
+    req: web::Json<PasskeyAuthStart>,
+    passkeys_data: web::Data<Mutex<HashMap<String, Vec<StoredPasskey>>>>,
+    auth_challenge_data: web::Data<Mutex<HashMap<String, PasskeyAuthentication>>>,
+) -> impl Responder {
+    let webauthn = match create_webauthn() {
+        Ok(wa) => wa,
+        Err(_) => return HttpResponse::InternalServerError().body("Failed to create WebAuthn instance"),
+    };
+
+    let passkeys = passkeys_data.lock().unwrap();
+    let user_passkeys = match passkeys.get(&req.username) {
+        Some(passkeys) => passkeys.iter().map(|sp| sp.passkey.clone()).collect::<Vec<_>>(),
+        None => return HttpResponse::BadRequest().body("No passkeys registered for user"),
+    };
+
+    let (rcr, auth_state) = match webauthn.start_passkey_authentication(&user_passkeys) {
+        Ok((rcr, auth_state)) => (rcr, auth_state),
+        Err(_) => return HttpResponse::InternalServerError().body("Failed to start authentication"),
+    };
+
+    // Store the challenge
+    let mut challenges = auth_challenge_data.lock().unwrap();
+    challenges.insert(req.username.clone(), auth_state);
+
+    HttpResponse::Ok().json(rcr)
+}
+
+/// Completes passkey authentication and returns JWT token
+async fn passkey_auth_finish(
+    req: web::Json<PasskeyAuthFinish>,
+    _passkeys_data: web::Data<Mutex<HashMap<String, Vec<StoredPasskey>>>>,
+    auth_challenge_data: web::Data<Mutex<HashMap<String, PasskeyAuthentication>>>,
+    private_key: web::Data<EncodingKey>,
+) -> impl Responder {
+    let webauthn = match create_webauthn() {
+        Ok(wa) => wa,
+        Err(_) => return HttpResponse::InternalServerError().body("Failed to create WebAuthn instance"),
+    };
+
+    // Retrieve the challenge
+    let mut challenges = auth_challenge_data.lock().unwrap();
+    let auth_state = match challenges.remove(&req.username) {
+        Some(auth_state) => auth_state,
+        None => return HttpResponse::BadRequest().body("No active authentication challenge"),
+    };
+
+    let _auth_result = match webauthn.finish_passkey_authentication(&req.credential, &auth_state) {
+        Ok(auth_result) => auth_result,
+        Err(_) => return HttpResponse::BadRequest().body("Failed to verify authentication"),
+    };
+
+    // Generate JWT token
+    let expiration = usize::try_from(
+        chrono::Utc::now()
+            .checked_add_signed(chrono::Duration::minutes(60))
+            .expect("valid timestamp")
+            .timestamp(),
+    );
+    if expiration.is_err() {
+        return HttpResponse::InternalServerError()
+            .body("Failed to calculate expiration time");
+    }
+    
+    let claims = Claims {
+        sub: req.username.clone(),
+        exp: expiration.unwrap(),
+    };
+    
+    let header = Header::new(Algorithm::RS512);
+    let token = match encode(&header, &claims, &private_key) {
+        Ok(token) => token,
+        Err(_) => return HttpResponse::InternalServerError().body("Failed to generate token"),
+    };
+
+    HttpResponse::Ok().json(serde_json::json!({"token": token, "passkey_used": true}))
+}
+
 /// Main application entry point - configures and starts the JWT authentication server.
 /// 
 /// # Returns
@@ -370,6 +608,10 @@ async fn well_known_public_key() -> Result<HttpResponse, Error> {
 /// - `/token-info` - GET endpoint to inspect JWT token details
 /// - `/validate-token` - POST endpoint to validate JWT token
 /// - `/well-known/public.pem` - GET endpoint to retrieve the RSA public key for JWT verification
+/// - `/passkey/register/start` - POST endpoint to initiate passkey registration
+/// - `/passkey/register/finish` - POST endpoint to complete passkey registration
+/// - `/passkey/auth/start` - POST endpoint to initiate passkey authentication
+/// - `/passkey/auth/finish` - POST endpoint to complete passkey authentication
 /// 
 /// # Examples
 /// Server starts at: <http://0.0.0.0:4000>
@@ -378,12 +620,24 @@ async fn main() -> std::io::Result<()> {
     env_logger::init();
     let private_key = load_private_key("private.pem").expect("Failed to load RSA private key");
     let public_key = load_public_key("jwt_public.pem").expect("Failed to load RSA public key");
+    
+    // Initialize passkey storage
+    let passkeys = load_passkeys().unwrap_or_default();
+    let passkeys_data = web::Data::new(Mutex::new(passkeys));
+    let challenge_data = web::Data::new(Mutex::new(HashMap::<String, PasskeyRegistration>::new()));
+    let auth_challenge_data = web::Data::new(Mutex::new(HashMap::<String, PasskeyAuthentication>::new()));
+    
     println!("Starting server at http://0.0.0.0:4000");
     println!("Using RSA keys for JWT signing and verification");
+    println!("Passkey support enabled");
+    
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(private_key.clone()))
             .app_data(web::Data::new(public_key.clone()))
+            .app_data(passkeys_data.clone())
+            .app_data(challenge_data.clone())
+            .app_data(auth_challenge_data.clone())
             .wrap(Logger::default())
             // API routes
             .route("/login", web::post().to(login))
@@ -391,6 +645,11 @@ async fn main() -> std::io::Result<()> {
             .route("/user", web::get().to(user))
             .route("/token-info", web::get().to(token_info))
             .route("/validate-token", web::post().to(validate_token))
+            // Passkey routes
+            .route("/passkey/register/start", web::post().to(passkey_register_start))
+            .route("/passkey/register/finish", web::post().to(passkey_register_finish))
+            .route("/passkey/auth/start", web::post().to(passkey_auth_start))
+            .route("/passkey/auth/finish", web::post().to(passkey_auth_finish))
             // Well-known endpoints
             .route("/well-known/public.pem", web::get().to(well_known_public_key))
             // Static file serving
