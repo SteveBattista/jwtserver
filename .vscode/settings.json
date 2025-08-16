@@ -1,4 +1,14 @@
 {
+    "cSpell.ignorePaths": [
+        "passkeys.json",
+        "*.pem",
+        "*.key",
+        "Cargo.lock",
+        "target/**",
+        "users.txt",
+        "requests.rest",
+        "generate_keys.sh"
+    ],
     "cSpell.words": [
         "actix",
         "cffi",
