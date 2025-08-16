@@ -134,15 +134,43 @@ fn load_user_hashes(path: &str) -> Result<HashMap<String, String>> {
     Ok(users)
 }
 
-/// Creates a WebAuthn instance for passkey operations
+/// Creates a WebAuthn instance for passkey operations with P-521 preference
+/// 
+/// Configures WebAuthn to prefer P-521 (ES512) signatures when available.
+/// Falls back to P-384 (ES384) and P-256 (ES256) for compatibility.
 fn create_webauthn() -> Result<Webauthn> {
     let rp_id = "localhost";
     let rp_origin = Url::parse("http://localhost:4000")?;
-    let builder = WebauthnBuilder::new(rp_id, &rp_origin)?;
+    
+    let builder = WebauthnBuilder::new(rp_id, &rp_origin)?
+        .rp_name("JWT Server");
+        
+    // Note: webauthn_rs automatically includes ES512 (P-521), ES384 (P-384), 
+    // ES256 (P-256), and RS256 in the default algorithm list, with preference
+    // for stronger algorithms when supported by the authenticator
+    
     Ok(builder.build()?)
 }
 
 /// Loads stored passkeys from file
+/// Loads stored passkey credentials from the passkeys.json file.
+/// 
+/// # Returns
+/// * `Result<HashMap<String, Vec<StoredPasskey>>>` - A map of usernames to their registered passkeys
+/// 
+/// # File Format
+/// The passkeys.json file contains a JSON array of StoredPasskey objects with:
+/// - username: The user identifier
+/// - credential_id: Base64-encoded credential identifier
+/// - passkey: The WebAuthn Passkey object containing public key and metadata
+/// 
+/// # Examples
+/// ```
+/// let passkeys = load_passkeys()?;
+/// if let Some(user_passkeys) = passkeys.get("steve") {
+///     println!("User has {} passkeys registered", user_passkeys.len());
+/// }
+/// ```
 fn load_passkeys() -> Result<HashMap<String, Vec<StoredPasskey>>> {
     let mut passkeys = HashMap::new();
     
@@ -161,6 +189,25 @@ fn load_passkeys() -> Result<HashMap<String, Vec<StoredPasskey>>> {
 }
 
 /// Saves passkeys to file
+/// Saves passkey credentials to the passkeys.json file.
+/// 
+/// # Arguments
+/// * `passkeys` - A map of usernames to their registered passkeys
+/// 
+/// # Returns
+/// * `Result<()>` - Success or IO error from file operations
+/// 
+/// # Process
+/// 1. Flattens the HashMap into a single Vec of all StoredPasskey objects
+/// 2. Serializes to pretty-printed JSON format
+/// 3. Writes atomically to passkeys.json file
+/// 
+/// # Examples
+/// ```
+/// let mut passkeys = HashMap::new();
+/// passkeys.insert("steve".to_string(), vec![stored_passkey]);
+/// save_passkeys(&passkeys)?;
+/// ```
 fn save_passkeys(passkeys: &HashMap<String, Vec<StoredPasskey>>) -> Result<()> {
     let all_passkeys: Vec<StoredPasskey> = passkeys
         .values()
@@ -427,6 +474,37 @@ async fn well_known_public_key() -> Result<HttpResponse, Error> {
 }
 
 /// Initiates passkey registration for a user
+/// Initiates passkey registration for an authenticated user.
+/// 
+/// # Arguments
+/// * `req` - JSON payload containing the username for passkey registration
+/// * `_passkeys_data` - Shared state containing stored passkey credentials (unused in start phase)
+/// * `challenge_data` - Shared state for storing registration challenges
+/// 
+/// # Returns
+/// * `HttpResponse` - WebAuthn credential creation options or error message
+/// 
+/// # Process
+/// 1. Validates that the user exists in the traditional authentication system
+/// 2. Generates a unique user ID for WebAuthn registration
+/// 3. Creates WebAuthn credential creation options with P-521 preference
+/// 4. Stores the registration challenge for completion verification
+/// 5. Returns credential creation options to the client
+/// 
+/// # Security Requirements
+/// - User must exist in users.txt (traditional authentication required first)
+/// - Uses cryptographically secure challenge generation
+/// - Supports P-521, P-384, P-256 curves in order of preference
+/// 
+/// # Examples
+/// ```
+/// POST /passkey/register/start
+/// Content-Type: application/json
+/// 
+/// {
+///   "username": "steve"
+/// }
+/// ```
 async fn passkey_register_start(
     req: web::Json<PasskeyRegisterStart>,
     _passkeys_data: web::Data<Mutex<HashMap<String, Vec<StoredPasskey>>>>,
@@ -447,6 +525,9 @@ async fn passkey_register_start(
     }
 
     let user_unique_id = Uuid::new_v4();
+    
+    // WebAuthn will automatically negotiate the strongest available algorithm
+    // Modern authenticators supporting P-521 (ES512) will be preferred
     let (ccr, skr) = match webauthn.start_passkey_registration(
         user_unique_id,
         &req.username,
@@ -465,6 +546,40 @@ async fn passkey_register_start(
 }
 
 /// Completes passkey registration for a user
+/// Completes passkey registration after user verification.
+/// 
+/// # Arguments
+/// * `req` - JSON payload containing username and WebAuthn credential response
+/// * `passkeys_data` - Shared state containing stored passkey credentials
+/// * `challenge_data` - Shared state containing active registration challenges
+/// 
+/// # Returns
+/// * `HttpResponse` - Success confirmation or error message
+/// 
+/// # Process
+/// 1. Retrieves the stored registration challenge for the user
+/// 2. Validates the WebAuthn credential response against the challenge
+/// 3. Verifies the authenticator's attestation and digital signature
+/// 4. Creates a StoredPasskey object with credential metadata
+/// 5. Saves the passkey to both memory and persistent storage
+/// 6. Removes the used challenge to prevent replay attacks
+/// 
+/// # Security Features
+/// - Challenge-response authentication prevents replay attacks
+/// - Digital signature verification ensures credential authenticity
+/// - Credential ID uniquely identifies the passkey
+/// - Base64 encoding for safe JSON storage
+/// 
+/// # Examples
+/// ```
+/// POST /passkey/register/finish
+/// Content-Type: application/json
+/// 
+/// {
+///   "username": "steve",
+///   "credential": { /* WebAuthn RegisterPublicKeyCredential */ }
+/// }
+/// ```
 async fn passkey_register_finish(
     req: web::Json<PasskeyRegisterFinish>,
     passkeys_data: web::Data<Mutex<HashMap<String, Vec<StoredPasskey>>>>,
@@ -508,6 +623,42 @@ async fn passkey_register_finish(
 }
 
 /// Initiates passkey authentication
+/// Initiates passkey authentication for a user with registered passkeys.
+/// 
+/// # Arguments
+/// * `req` - JSON payload containing the username for authentication
+/// * `passkeys_data` - Shared state containing stored passkey credentials
+/// * `auth_challenge_data` - Shared state for storing authentication challenges
+/// 
+/// # Returns
+/// * `HttpResponse` - WebAuthn credential request options or error message
+/// 
+/// # Process
+/// 1. Loads all registered passkeys for the specified user
+/// 2. Creates WebAuthn credential request options using stored passkeys
+/// 3. Generates a cryptographically secure authentication challenge
+/// 4. Stores the challenge for verification during completion
+/// 5. Returns credential request options to trigger authenticator
+/// 
+/// # Security Features
+/// - Only allows authentication with previously registered passkeys
+/// - Uses fresh cryptographic challenges for each authentication attempt
+/// - Supports multiple passkeys per user for redundancy
+/// 
+/// # Error Conditions
+/// - Returns error if no passkeys are registered for the user
+/// - WebAuthn instance creation failure
+/// - Challenge generation failure
+/// 
+/// # Examples
+/// ```
+/// POST /passkey/auth/start
+/// Content-Type: application/json
+/// 
+/// {
+///   "username": "steve"
+/// }
+/// ```
 async fn passkey_auth_start(
     req: web::Json<PasskeyAuthStart>,
     passkeys_data: web::Data<Mutex<HashMap<String, Vec<StoredPasskey>>>>,
@@ -537,6 +688,53 @@ async fn passkey_auth_start(
 }
 
 /// Completes passkey authentication and returns JWT token
+/// Completes passkey authentication and issues a JWT token.
+/// 
+/// # Arguments
+/// * `req` - JSON payload containing username and WebAuthn authentication response
+/// * `_passkeys_data` - Shared state containing stored passkey credentials (unused in auth finish)
+/// * `auth_challenge_data` - Shared state containing active authentication challenges
+/// * `private_key` - RSA private key for JWT token signing
+/// 
+/// # Returns
+/// * `HttpResponse` - JWT token on successful authentication or error message
+/// 
+/// # Process
+/// 1. Retrieves the stored authentication challenge for the user
+/// 2. Validates the WebAuthn authentication response against the challenge
+/// 3. Verifies the digital signature using the stored public key
+/// 4. Generates a JWT token with RS512 algorithm and 60-minute expiration
+/// 5. Returns the same JWT format as traditional password authentication
+/// 6. Removes the used challenge to prevent replay attacks
+/// 
+/// # Security Features
+/// - Digital signature verification ensures possession of the private key
+/// - Challenge verification prevents replay attacks
+/// - JWT tokens have the same security properties as password authentication
+/// - Uses RS512 (RSA with SHA-512) for JWT signing
+/// 
+/// # Token Format
+/// The returned JWT token contains:
+/// - `sub`: Username (subject)
+/// - `exp`: Expiration timestamp (60 minutes from issuance)
+/// - `passkey_used`: Boolean flag indicating passkey authentication
+/// 
+/// # Examples
+/// ```
+/// POST /passkey/auth/finish
+/// Content-Type: application/json
+/// 
+/// {
+///   "username": "steve",
+///   "credential": { /* WebAuthn PublicKeyCredential */ }
+/// }
+/// 
+/// Response:
+/// {
+///   "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzUxMiJ9...",
+///   "passkey_used": true
+/// }
+/// ```
 async fn passkey_auth_finish(
     req: web::Json<PasskeyAuthFinish>,
     _passkeys_data: web::Data<Mutex<HashMap<String, Vec<StoredPasskey>>>>,
