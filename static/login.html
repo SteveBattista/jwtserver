@@ -124,7 +124,7 @@
     </div>
 
     <script>
-        const API_BASE = 'http://localhost:4000';
+        const API_BASE = 'https://jwt.battistas.org';
         
         // Utility function to convert base64url to Uint8Array
         function base64urlToUint8Array(base64url) {
@@ -148,6 +148,13 @@
         function transformCredentialCreateOptions(options) {
             options.challenge = base64urlToUint8Array(options.challenge);
             options.user.id = base64urlToUint8Array(options.user.id);
+            
+            // Ensure the RP ID is set correctly for cross-domain usage
+            if (!options.rp) {
+                options.rp = {};
+            }
+            options.rp.id = "battistas.org"; // This enables cross-subdomain usage
+            
             if (options.excludeCredentials) {
                 options.excludeCredentials = options.excludeCredentials.map(cred => ({
                     ...cred,
@@ -160,6 +167,10 @@
         // Transform credential request options for WebAuthn
         function transformCredentialRequestOptions(options) {
             options.challenge = base64urlToUint8Array(options.challenge);
+            
+            // Ensure the RP ID is set correctly for cross-domain usage
+            options.rpId = "battistas.org"; // This enables cross-subdomain usage
+            
             if (options.allowCredentials) {
                 options.allowCredentials = options.allowCredentials.map(cred => ({
                     ...cred,

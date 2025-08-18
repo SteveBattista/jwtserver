@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cross-Domain Passkey Login Example</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 400px;
+            margin: 100px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .login-container {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: bold;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #17a2b8;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background-color: #138496;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .error {
+            color: #dc3545;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .success {
+            color: #155724;
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .info {
+            background-color: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h1>Cross-Domain Passkey Login</h1>
+        
+        <div class="info">
+            <strong>Demo:</strong> This page shows how passkeys registered on jwt.battistas.org can be used on www.battistas.org (or any subdomain of battistas.org).
+        </div>
+
+        <div id="error-message" class="error"></div>
+        <div id="success-message" class="success"></div>
+
+        <div class="form-group">
+            <label for="username">Username:</label>
+            <input type="text" id="username" name="username" required placeholder="Enter your username">
+        </div>
+        
+        <button type="button" id="passkey-login-btn">
+            Login with Passkey
+        </button>
+        
+        <button type="button" id="check-auth-btn" style="background-color: #6c757d;">
+            Check Current Auth Status
+        </button>
+    </div>
+
+    <script>
+        // Point to your JWT authentication server
+        const API_BASE = 'https://jwt.battistas.org';
+        
+        // Utility function to convert base64url to Uint8Array
+        function base64urlToUint8Array(base64url) {
+            const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+            const padded = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
+            const binary = atob(padded);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return bytes;
+        }
+
+        // Utility function to convert Uint8Array to base64url
+        function uint8ArrayToBase64url(uint8Array) {
+            const base64 = btoa(String.fromCharCode(...uint8Array));
+            return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        }
+
+        // Transform credential request options for WebAuthn
+        function transformCredentialRequestOptions(options) {
+            options.challenge = base64urlToUint8Array(options.challenge);
+            
+            // CRUCIAL: Set the RP ID to the parent domain for cross-subdomain usage
+            options.rpId = "battistas.org";
+            
+            if (options.allowCredentials) {
+                options.allowCredentials = options.allowCredentials.map(cred => ({
+                    ...cred,
+                    id: base64urlToUint8Array(cred.id)
+                }));
+            }
+            return options;
+        }
+
+        // Transform authentication credential for sending to server
+        function transformAuthCredentialForServer(credential) {
+            return {
+                id: credential.id,
+                rawId: uint8ArrayToBase64url(new Uint8Array(credential.rawId)),
+                response: {
+                    clientDataJSON: uint8ArrayToBase64url(new Uint8Array(credential.response.clientDataJSON)),
+                    authenticatorData: uint8ArrayToBase64url(new Uint8Array(credential.response.authenticatorData)),
+                    signature: uint8ArrayToBase64url(new Uint8Array(credential.response.signature)),
+                    userHandle: credential.response.userHandle ? uint8ArrayToBase64url(new Uint8Array(credential.response.userHandle)) : null
+                },
+                type: credential.type
+            };
+        }
+
+        // Show error message
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            const successDiv = document.getElementById('success-message');
+            successDiv.style.display = 'none';
+        }
+
+        // Show success message
+        function showSuccess(message) {
+            const successDiv = document.getElementById('success-message');
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.style.display = 'none';
+        }
+
+        // Passkey authentication
+        document.getElementById('passkey-login-btn').addEventListener('click', async () => {
+            const username = document.getElementById('username').value;
+            if (!username) {
+                showError('Please enter a username first');
+                return;
+            }
+
+            const loginBtn = document.getElementById('passkey-login-btn');
+            loginBtn.disabled = true;
+            loginBtn.textContent = 'Authenticating...';
+
+            try {
+                // Start authentication
+                const startResponse = await fetch(`${API_BASE}/passkey/auth/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username })
+                });
+
+                if (!startResponse.ok) {
+                    const error = await startResponse.text();
+                    throw new Error(error);
+                }
+
+                const options = await startResponse.json();
+                console.log('Received options:', options);
+                
+                const transformedOptions = transformCredentialRequestOptions(options.publicKey);
+                console.log('Transformed options:', transformedOptions);
+
+                // Get credential - this should work with passkeys registered on jwt.battistas.org
+                const credential = await navigator.credentials.get({
+                    publicKey: transformedOptions
+                });
+
+                if (!credential) {
+                    throw new Error('Failed to get credential');
+                }
+
+                console.log('Got credential:', credential);
+
+                // Finish authentication
+                const finishResponse = await fetch(`${API_BASE}/passkey/auth/finish`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username,
+                        credential: transformAuthCredentialForServer(credential)
+                    })
+                });
+
+                if (!finishResponse.ok) {
+                    const error = await finishResponse.text();
+                    throw new Error(error);
+                }
+
+                const data = await finishResponse.json();
+                
+                // Store JWT in localStorage
+                localStorage.setItem('jwt_token', data.token);
+                
+                showSuccess(`Passkey login successful from ${window.location.hostname}! JWT token stored.`);
+
+            } catch (error) {
+                console.error('Passkey login error:', error);
+                showError(`Passkey login failed: ${error.message}`);
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Login with Passkey';
+            }
+        });
+
+        // Check authentication status
+        document.getElementById('check-auth-btn').addEventListener('click', async () => {
+            const token = localStorage.getItem('jwt_token');
+            if (!token) {
+                showError('No JWT token found. Please log in first.');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/user`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    showSuccess(`Authenticated as: ${data.user}`);
+                } else {
+                    showError('JWT token is invalid or expired');
+                    localStorage.removeItem('jwt_token');
+                }
+            } catch (error) {
+                showError(`Error checking auth: ${error.message}`);
+            }
+        });
+    </script>
+</body>
+</html>

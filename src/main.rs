@@ -134,16 +134,30 @@ fn load_user_hashes(path: &str) -> Result<HashMap<String, String>> {
     Ok(users)
 }
 
-/// Creates a `WebAuthn` instance for passkey operations with P-521 preference
+/// Creates a WebAuthn instance configured for cross-domain usage.
 /// 
-/// Configures `WebAuthn` to prefer P-521 (ES512) signatures when available.
+/// # Cross-Domain Configuration
+/// The RP ID is set to "battistas.org" which allows passkeys to work across:
+/// - jwt.battistas.org
+/// - www.battistas.org  
+/// - Any other subdomain of battistas.org
+/// 
+/// # Returns
+/// * `Result<Webauthn>` - Configured WebAuthn instance or error
+/// 
+/// # Security Note
+/// Uses RS512, ES512 (P-521), ES384 (P-384), and ES256 (P-256) algorithms.
 /// Falls back to P-384 (ES384) and P-256 (ES256) for compatibility.
 fn create_webauthn() -> Result<Webauthn> {
-    let rp_id = "localhost";
-    let rp_origin = Url::parse("http://localhost:4000")?;
+    // Use parent domain as RP ID to enable cross-subdomain passkey usage
+    let rp_id = "battistas.org";
+    
+    // The origin should be the specific subdomain where the WebAuthn call originates
+    // For development, you might need to adjust this based on your setup
+    let rp_origin = Url::parse("https://jwt.battistas.org")?;
     
     let builder = WebauthnBuilder::new(rp_id, &rp_origin)?
-        .rp_name("JWT Server");
+        .rp_name("Battistas.org Authentication");
         
     // Note: webauthn_rs automatically includes ES512 (P-521), ES384 (P-384), 
     // ES256 (P-256), and RS256 in the default algorithm list, with preference
